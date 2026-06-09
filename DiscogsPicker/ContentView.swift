@@ -135,7 +135,10 @@ private struct PickerView: View {
         GeometryReader { proxy in
             VStack(spacing: 18) {
                 if let release = viewModel.currentRelease {
-                    ArtworkView(url: release.basicInformation.artworkURL)
+                    ArtworkView(
+                        thumbnailURL: release.basicInformation.thumbnailArtworkURL,
+                        fullSizeURL: release.basicInformation.fullArtworkURL
+                    )
                         .frame(width: proxy.size.width, height: proxy.size.width)
 
                     VStack(spacing: 8) {
@@ -160,13 +163,15 @@ private struct PickerView: View {
                     Button {
                         viewModel.chooseRandom()
                     } label: {
-                        Label("Pick Another", systemImage: "shuffle")
+                        Label(viewModel.isPreparingNextRelease ? "Getting Next" : "Pick Another", systemImage: "shuffle")
                             .frame(maxWidth: .infinity)
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.blue)
                     .controlSize(.large)
+                    .disabled(!viewModel.canPickAnother)
+                    .opacity(viewModel.canPickAnother ? 1 : 0.72)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 30)
@@ -188,25 +193,39 @@ private struct PickerView: View {
 }
 
 private struct ArtworkView: View {
-    let url: URL?
+    let thumbnailURL: URL?
+    let fullSizeURL: URL?
 
     var body: some View {
         GeometryReader { proxy in
             let size = min(proxy.size.width, proxy.size.height)
+            let previewURL = thumbnailURL ?? fullSizeURL
 
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case let .success(image):
-                    image
-                        .resizable()
-                        .scaledToFit()
-                case .failure:
-                    placeholder(systemImage: "record.circle")
-                case .empty:
-                    ProgressView()
-                        .frame(width: size, height: size)
-                @unknown default:
-                    placeholder(systemImage: "record.circle")
+            ZStack {
+                AsyncImage(url: previewURL) { phase in
+                    switch phase {
+                    case let .success(image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                    case .failure:
+                        placeholder(systemImage: "record.circle")
+                    case .empty:
+                        ProgressView()
+                            .frame(width: size, height: size)
+                    @unknown default:
+                        placeholder(systemImage: "record.circle")
+                    }
+                }
+
+                if let thumbnailURL, fullSizeURL != thumbnailURL {
+                    AsyncImage(url: fullSizeURL) { phase in
+                        if case let .success(image) = phase {
+                            image
+                                .resizable()
+                                .scaledToFit()
+                        }
+                    }
                 }
             }
             .frame(width: size, height: size)
