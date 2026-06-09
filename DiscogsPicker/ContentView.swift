@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel = AppViewModel()
 
     var body: some View {
@@ -34,6 +35,13 @@ struct ContentView: View {
                     }
                     .disabled(viewModel.isSyncing)
                 }
+            }
+            .task {
+                await viewModel.runAutoRefreshLoop()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active else { return }
+                Task { await viewModel.refreshCollectionIfPossible() }
             }
             .alert("Something went sideways", isPresented: errorBinding) {
                 Button("OK", role: .cancel) {
