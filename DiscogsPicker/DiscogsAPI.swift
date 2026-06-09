@@ -72,7 +72,7 @@ struct DiscogsAPI {
         }
 
         var request = URLRequest(url: url)
-        request.setValue("DiscogsPicker/0.1 +https://github.com", forHTTPHeaderField: "User-Agent")
+        request.setValue("CrateShuffle/0.1 +https://github.com/nolen777/discogs-picker", forHTTPHeaderField: "User-Agent")
         request.setValue("Discogs token=\(credentials.token)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await session.data(for: request)
