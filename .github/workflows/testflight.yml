@@ -19,6 +19,7 @@ env:
 jobs:
   archive-and-upload:
     name: Archive and Upload
+    environment: testflight
     runs-on: [self-hosted, macOS, discogs-picker-ios]
     timeout-minutes: 45
 
