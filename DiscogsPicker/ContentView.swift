@@ -77,14 +77,24 @@ private struct SetupView: View {
                 }
 
                 VStack(spacing: 14) {
-                    TextField("Discogs username", text: $viewModel.credentials.username)
+                    TextField(
+                        text: $viewModel.credentials.username,
+                        prompt: signInPrompt("Discogs username")
+                    ) {
+                        Text("Discogs username")
+                    }
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .textContentType(.username)
                         .submitLabel(.next)
                         .signInTextFieldStyle()
 
-                    SecureField("Personal access token", text: $viewModel.credentials.token)
+                    SecureField(
+                        text: $viewModel.credentials.token,
+                        prompt: signInPrompt("Personal access token, NOT your password")
+                    ) {
+                        Text("Personal access token")
+                    }
                         .textContentType(.password)
                         .submitLabel(.done)
                         .signInTextFieldStyle()
@@ -119,6 +129,12 @@ private struct SetupView: View {
             .frame(maxWidth: 520)
         }
     }
+}
+
+private func signInPrompt(_ text: String) -> Text {
+    Text(text)
+        .fontWeight(.semibold)
+        .foregroundStyle(.white.opacity(0.72))
 }
 
 private var personalAccessTokenHelp: some View {
