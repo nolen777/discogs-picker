@@ -86,7 +86,7 @@ private struct SetupView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .textContentType(.username)
-                        .submitLabel(.next)
+                        .submitLabel(.go)
                         .signInTextFieldStyle()
 
                     SecureField(
@@ -96,14 +96,15 @@ private struct SetupView: View {
                         Text("Personal access token")
                     }
                         .textContentType(.password)
-                        .submitLabel(.done)
+                        .submitLabel(.go)
                         .signInTextFieldStyle()
                 }
+                .onSubmit(syncCollectionIfReady)
 
                 personalAccessTokenHelp
 
                 Button {
-                    Task { await viewModel.syncCollection() }
+                    syncCollectionIfReady()
                 } label: {
                     Label(viewModel.isSyncing ? "Syncing" : "Sync Collection", systemImage: "arrow.triangle.2.circlepath")
                         .frame(maxWidth: .infinity)
@@ -128,6 +129,11 @@ private struct SetupView: View {
             .padding(24)
             .frame(maxWidth: 520)
         }
+    }
+
+    private func syncCollectionIfReady() {
+        guard viewModel.hasCredentials, !viewModel.isSyncing else { return }
+        Task { await viewModel.syncCollection() }
     }
 }
 
