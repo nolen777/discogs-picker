@@ -1,0 +1,119 @@
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_upload:
+        description: Build and export without uploading to TestFlight
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  BUILD_DIR: /tmp/discogs-picker-${{ github.run_id }}
+  KEYCHAIN_NAME: discogs-picker-build-${{ github.run_id }}.keychain
+
+jobs:
+  archive-and-upload:
+    name: Archive and Upload
+    runs-on: [self-hosted, macOS, PTT-ios]
+    timeout-minutes: 45
+
+    steps:
+      - name: Prune stale PR refs
+        run: git config --global --unset-all "remote.origin.fetch" || true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Install Signing Certificate
+        env:
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PWD: ${{ secrets.IOS_CERTIFICATE_PWD }}
+        run: |
+          set -euxo pipefail
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/discogs-picker-cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/$KEYCHAIN_NAME"
+
+          echo "$IOS_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$IOS_CERTIFICATE_PWD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed s/\"//g)
+
+      - name: Install Provisioning Profile
+        id: profiles
+        env:
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+        run: |
+          set -euxo pipefail
+
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+
+          PROFILE_PATH="$RUNNER_TEMP/discogs-picker.mobileprovision"
+          echo "$IOS_PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_PATH"
+
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< "$(security cms -D -i "$PROFILE_PATH")")
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
+          echo "APP_PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+
+      - name: Archive and Export IPA
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_SIGN_IDENTITY: ${{ secrets.IOS_SIGN_IDENTITY }}
+        run: |
+          set -euxo pipefail
+
+          API_KEY_PATH="$RUNNER_TEMP/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8"
+          printf "%s" "$APP_STORE_CONNECT_API_KEY" > "$API_KEY_PATH"
+          chmod 600 "$API_KEY_PATH"
+
+          export APP_STORE_CONNECT_API_KEY_PATH="$API_KEY_PATH"
+
+          chmod +x ./ci/archive_ios.sh
+          ./ci/archive_ios.sh "$BUILD_DIR" "$APPLE_TEAM_ID" "$APP_PROFILE_UUID"
+
+          rm -f "$API_KEY_PATH"
+
+      - name: Upload to TestFlight
+        if: ${{ inputs.skip_upload != true }}
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_SIGN_IDENTITY: ${{ secrets.IOS_SIGN_IDENTITY }}
+        run: |
+          set -euxo pipefail
+
+          API_KEY_PATH="$RUNNER_TEMP/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8"
+          printf "%s" "$APP_STORE_CONNECT_API_KEY" > "$API_KEY_PATH"
+          chmod 600 "$API_KEY_PATH"
+
+          export APP_STORE_CONNECT_API_KEY_PATH="$API_KEY_PATH"
+
+          chmod +x ./ci/upload_testflight.sh
+          ./ci/upload_testflight.sh "$BUILD_DIR/DiscogsPicker.xcarchive" "$APPLE_TEAM_ID" "$APP_PROFILE_UUID"
+
+          rm -f "$API_KEY_PATH"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          set -euxo pipefail
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/$KEYCHAIN_NAME"
+          security delete-keychain "$KEYCHAIN_PATH" || true
+          rm -rf "$BUILD_DIR"

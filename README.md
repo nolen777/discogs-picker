@@ -19,4 +19,8 @@ From the repo:
 xcodebuild -project DiscogsPicker.xcodeproj -scheme DiscogsPicker -configuration Debug -sdk iphoneos -destination generic/platform=iOS -derivedDataPath .derivedData CODE_SIGNING_ALLOWED=NO build
 ```
 
-The project currently has no app icon asset catalog. Add one before shipping or archiving for distribution.
+## TestFlight
+
+The GitHub Actions workflow in `.github/workflows/testflight.yml` archives and uploads builds to TestFlight from the self-hosted macOS runner. See `docs/testflight-setup.md` for the Apple Developer and GitHub secrets checklist.
+
+The project currently has no app icon asset catalog. Add one before submitting to App Review.
