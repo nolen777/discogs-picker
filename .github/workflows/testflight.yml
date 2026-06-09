@@ -19,7 +19,7 @@ env:
 jobs:
   archive-and-upload:
     name: Archive and Upload
-    runs-on: [self-hosted, macOS, PTT-ios]
+    runs-on: [self-hosted, macOS, discogs-picker-ios]
     timeout-minutes: 45
 
     steps:
