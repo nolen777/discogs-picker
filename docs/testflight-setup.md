@@ -4,15 +4,15 @@ This repo has a manual GitHub Actions workflow at `.github/workflows/testflight.
 
 ## Apple Developer
 
-1. In Apple Developer > Certificates, Identifiers & Profiles, create an explicit App ID for `com.dancrosby.discogspicker`.
+1. In Apple Developer > Certificates, Identifiers & Profiles, create an explicit App ID for `net.danielcrosby.discogspicker`.
 2. Keep capabilities minimal. The app currently does not need iCloud, Push Notifications, Associated Domains, or App Groups.
 3. Create or reuse an Apple Distribution certificate. Export the certificate and private key from Keychain Access as a `.p12` file and save the export password.
-4. Create an App Store distribution provisioning profile for `com.dancrosby.discogspicker` using that distribution certificate.
+4. Create an App Store distribution provisioning profile for `net.danielcrosby.discogspicker` using that distribution certificate.
 5. Download the `.mobileprovision` profile.
 
 ## App Store Connect
 
-1. Create a new app record and select the `com.dancrosby.discogspicker` bundle ID.
+1. Create a new app record and select the `net.danielcrosby.discogspicker` bundle ID.
 2. Set the platform to iOS and choose a SKU. The SKU can be any stable internal value, such as `discogs-picker-ios`.
 3. In Users and Access > Integrations > App Store Connect API, create an API key with access to upload builds. `App Manager` is the simplest role for this.
 4. Download the `.p8` API key and record the Key ID and Issuer ID.

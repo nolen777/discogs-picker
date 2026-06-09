@@ -13,7 +13,7 @@ ARCHIVE_PATH="$1"
 TEAM_ID="$2"
 APP_PROFILE_UUID="$3"
 
-BUNDLE_ID="com.dancrosby.discogspicker"
+BUNDLE_ID="net.danielcrosby.discogspicker"
 EXPORT_PATH="$(dirname "$ARCHIVE_PATH")/upload"
 EXPORT_OPTIONS_PATH="$(dirname "$ARCHIVE_PATH")/UploadExportOptions.plist"
 SIGN_IDENTITY="${IOS_SIGN_IDENTITY:-Apple Distribution: Daniel Crosby (UWJ88DX8WQ)}"

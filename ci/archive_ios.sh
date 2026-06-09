@@ -15,7 +15,7 @@ APP_PROFILE_UUID="$3"
 
 PROJECT="DiscogsPicker.xcodeproj"
 SCHEME="DiscogsPicker"
-BUNDLE_ID="com.dancrosby.discogspicker"
+BUNDLE_ID="net.danielcrosby.discogspicker"
 ARCHIVE_PATH="$OUTPUT_PATH/DiscogsPicker.xcarchive"
 EXPORT_PATH="$OUTPUT_PATH/export"
 EXPORT_OPTIONS_PATH="$OUTPUT_PATH/ExportOptions.plist"
