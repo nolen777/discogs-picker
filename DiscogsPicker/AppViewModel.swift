@@ -13,7 +13,6 @@ final class AppViewModel: ObservableObject {
     private let api = DiscogsAPI()
     private let keychain = KeychainStore()
     private let cache = CollectionCache()
-    private let cacheFreshnessInterval: TimeInterval = 6 * 60 * 60
     private let autoRefreshInterval: Duration = .seconds(5 * 60)
     private var preparedRelease: CollectionRelease?
     private var prepareNextTask: Task<Void, Never>?
@@ -21,7 +20,7 @@ final class AppViewModel: ObservableObject {
     init() {
         self.credentials = keychain.loadCredentials() ?? DiscogsCredentials(username: "", token: "")
 
-        if let cached = cache.load(), Date().timeIntervalSince(cached.fetchedAt) < cacheFreshnessInterval {
+        if credentials.isComplete, let cached = cache.load() {
             self.releases = cached.releases
             self.lastSyncedAt = cached.fetchedAt
             chooseRandom()
