@@ -81,7 +81,6 @@ final class AppViewModel: ObservableObject {
             return
         }
 
-        let releaseBeforeSync = currentRelease
         isSyncing = true
         defer { isSyncing = false }
 
@@ -89,6 +88,7 @@ final class AppViewModel: ObservableObject {
             let cleanCredentials = trimmedCredentials()
             try keychain.save(credentials: cleanCredentials)
             let fetchedReleases = try await api.fetchCollection(credentials: cleanCredentials)
+            let releaseToPreserve = currentRelease
             let cached = CachedCollection(
                 username: cleanCredentials.username,
                 fetchedAt: Date(),
@@ -107,9 +107,9 @@ final class AppViewModel: ObservableObject {
             prepareNextTask = nil
             isPreparingNextRelease = false
 
-            if pickNewRelease || releaseBeforeSync == nil {
+            if pickNewRelease || releaseToPreserve == nil {
                 chooseRandom()
-            } else if let releaseBeforeSync, let refreshedRelease = refreshedVersion(of: releaseBeforeSync) {
+            } else if let releaseToPreserve, let refreshedRelease = refreshedVersion(of: releaseToPreserve) {
                 currentRelease = refreshedRelease
                 prepareNextRelease()
             } else {
