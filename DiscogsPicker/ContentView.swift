@@ -77,21 +77,34 @@ private struct SetupView: View {
                 }
 
                 VStack(spacing: 14) {
-                    TextField("Discogs username", text: $viewModel.credentials.username)
+                    TextField(
+                        text: $viewModel.credentials.username,
+                        prompt: signInPrompt("Discogs username")
+                    ) {
+                        Text("Discogs username")
+                    }
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .textContentType(.username)
-                        .submitLabel(.next)
+                        .submitLabel(.go)
                         .signInTextFieldStyle()
 
-                    SecureField("Personal access token", text: $viewModel.credentials.token)
+                    SecureField(
+                        text: $viewModel.credentials.token,
+                        prompt: signInPrompt("Personal Access Token")
+                    ) {
+                        Text("Personal access token")
+                    }
                         .textContentType(.password)
-                        .submitLabel(.done)
+                        .submitLabel(.go)
                         .signInTextFieldStyle()
                 }
+                .onSubmit(syncCollectionIfReady)
+
+                personalAccessTokenHelp
 
                 Button {
-                    Task { await viewModel.syncCollection() }
+                    syncCollectionIfReady()
                 } label: {
                     Label(viewModel.isSyncing ? "Syncing" : "Sync Collection", systemImage: "arrow.triangle.2.circlepath")
                         .frame(maxWidth: .infinity)
@@ -116,6 +129,42 @@ private struct SetupView: View {
             .padding(24)
             .frame(maxWidth: 520)
         }
+    }
+
+    private func syncCollectionIfReady() {
+        guard viewModel.hasCredentials, !viewModel.isSyncing else { return }
+        Task { await viewModel.syncCollection() }
+    }
+}
+
+private func signInPrompt(_ text: String) -> Text {
+    Text(text)
+        .fontWeight(.semibold)
+        .foregroundStyle(.white.opacity(0.58))
+}
+
+private var personalAccessTokenHelp: some View {
+    VStack(alignment: .leading, spacing: 10) {
+        Text("Use a Discogs personal access token, not your Discogs password.")
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.white)
+
+        Text("In Discogs, open Settings, then Developers, then copy your personal access token into the field above.")
+            .font(.footnote)
+            .foregroundStyle(.white.opacity(0.72))
+
+        Link(destination: URL(string: "https://www.discogs.com/settings/developers")!) {
+            Label("Open Discogs Developer Settings", systemImage: "arrow.up.forward.square")
+                .font(.footnote.weight(.semibold))
+        }
+        .tint(.blue)
+    }
+    .padding(14)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .overlay {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .stroke(.white.opacity(0.18), lineWidth: 1)
     }
 }
 
