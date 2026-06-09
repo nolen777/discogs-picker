@@ -90,6 +90,8 @@ private struct SetupView: View {
                         .signInTextFieldStyle()
                 }
 
+                personalAccessTokenHelp
+
                 Button {
                     Task { await viewModel.syncCollection() }
                 } label: {
@@ -116,6 +118,31 @@ private struct SetupView: View {
             .padding(24)
             .frame(maxWidth: 520)
         }
+    }
+}
+
+private var personalAccessTokenHelp: some View {
+    VStack(alignment: .leading, spacing: 10) {
+        Text("Use a Discogs personal access token, not your Discogs password.")
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.white)
+
+        Text("In Discogs, open Settings, then Developers, then copy your personal access token into the field above.")
+            .font(.footnote)
+            .foregroundStyle(.white.opacity(0.72))
+
+        Link(destination: URL(string: "https://www.discogs.com/settings/developers")!) {
+            Label("Open Discogs Developer Settings", systemImage: "arrow.up.forward.square")
+                .font(.footnote.weight(.semibold))
+        }
+        .tint(.blue)
+    }
+    .padding(14)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .overlay {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .stroke(.white.opacity(0.18), lineWidth: 1)
     }
 }
 
