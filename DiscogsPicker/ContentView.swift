@@ -161,6 +161,13 @@ private struct PickerView: View {
                             .font(.title3)
                             .foregroundStyle(.white.opacity(0.78))
                             .multilineTextAlignment(.center)
+
+                        Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
+                            Text("Data provided by Discogs")
+                                .font(.footnote.weight(.medium))
+                        }
+                        .tint(.white.opacity(0.82))
+                        .padding(.top, 4)
                     }
                     .padding(.horizontal, 20)
                 }
@@ -183,15 +190,6 @@ private struct PickerView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 30)
-
-                if let release = viewModel.currentRelease {
-                    Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
-                        Text("Data provided by Discogs")
-                            .font(.footnote.weight(.medium))
-                    }
-                    .tint(.white.opacity(0.82))
-                    .padding(.bottom, 8)
-                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .background(Color.black)
