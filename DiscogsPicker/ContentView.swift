@@ -1,0 +1,211 @@
+import SwiftUI
+
+struct ContentView: View {
+    @StateObject private var viewModel = AppViewModel()
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black
+                .ignoresSafeArea()
+
+                if viewModel.needsSetup {
+                    SetupView(viewModel: viewModel)
+                } else {
+                    PickerView(viewModel: viewModel)
+                }
+            }
+            .navigationTitle("Discogs Picker")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.black, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .tint(.white)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Refresh Collection") {
+                            Task { await viewModel.syncCollection() }
+                        }
+                        Button("Reset Credentials", role: .destructive) {
+                            viewModel.signOut()
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .disabled(viewModel.isSyncing)
+                }
+            }
+            .alert("Something went sideways", isPresented: errorBinding) {
+                Button("OK", role: .cancel) {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
+        }
+    }
+
+    private var errorBinding: Binding<Bool> {
+        Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )
+    }
+}
+
+private struct SetupView: View {
+    @ObservedObject var viewModel: AppViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Pick from your shelves")
+                        .font(.largeTitle.bold())
+                        .foregroundStyle(.white)
+                    Text("A quick shuffle for the next spin.")
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.68))
+                }
+
+                VStack(spacing: 14) {
+                    TextField("Discogs username", text: $viewModel.credentials.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .textContentType(.username)
+                        .submitLabel(.next)
+                        .textFieldStyle(.roundedBorder)
+
+                    SecureField("Personal access token", text: $viewModel.credentials.token)
+                        .textContentType(.password)
+                        .submitLabel(.done)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Button {
+                    Task { await viewModel.syncCollection() }
+                } label: {
+                    Label(viewModel.isSyncing ? "Syncing" : "Sync Collection", systemImage: "arrow.triangle.2.circlepath")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(viewModel.isSyncing || !viewModel.hasCredentials)
+
+                if viewModel.isSyncing {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                }
+
+                discogsNotice
+            }
+            .padding(24)
+            .frame(maxWidth: 520)
+        }
+    }
+}
+
+private struct PickerView: View {
+    @ObservedObject var viewModel: AppViewModel
+
+    var body: some View {
+        GeometryReader { proxy in
+            VStack(spacing: 18) {
+                if let release = viewModel.currentRelease {
+                    ArtworkView(url: release.basicInformation.artworkURL)
+                        .frame(width: proxy.size.width, height: proxy.size.width)
+
+                    VStack(spacing: 8) {
+                        Text(release.basicInformation.title)
+                            .font(.title.bold())
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .minimumScaleFactor(0.76)
+
+                        Text(release.displayArtist)
+                            .font(.title3)
+                            .foregroundStyle(.white.opacity(0.78))
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, 20)
+
+                    Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
+                        Text("Data provided by Discogs")
+                            .font(.footnote.weight(.medium))
+                    }
+                    .tint(.white.opacity(0.9))
+                }
+
+                Spacer(minLength: 0)
+
+                VStack(spacing: 12) {
+                    Button {
+                        viewModel.chooseRandom()
+                    } label: {
+                        Label("Pick Another", systemImage: "shuffle")
+                            .frame(maxWidth: .infinity)
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.blue)
+                    .controlSize(.large)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .background(Color.black)
+        }
+        .background(Color.black)
+    }
+}
+
+private struct ArtworkView: View {
+    let url: URL?
+
+    var body: some View {
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case let .success(image):
+                    image
+                        .resizable()
+                        .scaledToFit()
+                case .failure:
+                    placeholder(systemImage: "record.circle")
+                case .empty:
+                    ProgressView()
+                        .frame(width: size, height: size)
+                @unknown default:
+                    placeholder(systemImage: "record.circle")
+                }
+            }
+            .frame(width: size, height: size)
+            .background(Color.black)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+
+    private func placeholder(systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(.white.opacity(0.45))
+            .padding(72)
+    }
+}
+
+private var discogsNotice: some View {
+    VStack(alignment: .leading, spacing: 8) {
+        Text("This application uses Discogs' API but is not affiliated with, sponsored or endorsed by Discogs. 'Discogs' is a trademark of Zink Media, LLC.")
+            .font(.footnote)
+            .foregroundStyle(.white.opacity(0.68))
+
+        Link("Data provided by Discogs", destination: URL(string: "https://www.discogs.com")!)
+            .font(.footnote.weight(.medium))
+    }
+}
