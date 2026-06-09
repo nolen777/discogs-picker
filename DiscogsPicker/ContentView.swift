@@ -74,12 +74,12 @@ private struct SetupView: View {
                         .autocorrectionDisabled()
                         .textContentType(.username)
                         .submitLabel(.next)
-                        .textFieldStyle(.roundedBorder)
+                        .signInTextFieldStyle()
 
                     SecureField("Personal access token", text: $viewModel.credentials.token)
                         .textContentType(.password)
                         .submitLabel(.done)
-                        .textFieldStyle(.roundedBorder)
+                        .signInTextFieldStyle()
                 }
 
                 Button {
@@ -87,9 +87,15 @@ private struct SetupView: View {
                 } label: {
                     Label(viewModel.isSyncing ? "Syncing" : "Sync Collection", systemImage: "arrow.triangle.2.circlepath")
                         .frame(maxWidth: .infinity)
+                        .foregroundStyle(.white)
+                        .frame(minHeight: 50)
+                        .background(viewModel.hasCredentials && !viewModel.isSyncing ? Color.blue : Color.white.opacity(0.16), in: Capsule())
+                        .overlay {
+                            Capsule()
+                                .stroke(.white.opacity(viewModel.hasCredentials && !viewModel.isSyncing ? 0 : 0.22), lineWidth: 1)
+                        }
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .buttonStyle(.plain)
                 .disabled(viewModel.isSyncing || !viewModel.hasCredentials)
 
                 if viewModel.isSyncing {
@@ -102,6 +108,23 @@ private struct SetupView: View {
             .padding(24)
             .frame(maxWidth: 520)
         }
+    }
+}
+
+private extension View {
+    func signInTextFieldStyle() -> some View {
+        self
+            .textFieldStyle(.plain)
+            .foregroundStyle(.white)
+            .tint(.blue)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 48)
+            .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(.white.opacity(0.24), lineWidth: 1)
+            }
+            .autocorrectionDisabled()
     }
 }
 
