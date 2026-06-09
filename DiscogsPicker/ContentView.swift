@@ -91,7 +91,7 @@ private struct SetupView: View {
 
                     SecureField(
                         text: $viewModel.credentials.token,
-                        prompt: signInPrompt("Personal access token, NOT your password")
+                        prompt: signInPrompt("Personal Access Token")
                     ) {
                         Text("Personal access token")
                     }
@@ -134,7 +134,7 @@ private struct SetupView: View {
 private func signInPrompt(_ text: String) -> Text {
     Text(text)
         .fontWeight(.semibold)
-        .foregroundStyle(.white.opacity(0.72))
+        .foregroundStyle(.white.opacity(0.58))
 }
 
 private var personalAccessTokenHelp: some View {
