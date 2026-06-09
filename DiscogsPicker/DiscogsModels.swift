@@ -76,9 +76,21 @@ struct BasicInformation: Codable, Equatable {
     let labels: [DiscogsLabel]
 
     var artworkURL: URL? {
-        let candidate = coverImage?.isEmpty == false ? coverImage : thumb
-        guard let candidate else { return nil }
-        return URL(string: candidate)
+        fullArtworkURL ?? thumbnailArtworkURL
+    }
+
+    var thumbnailArtworkURL: URL? {
+        guard let thumb, !thumb.isEmpty else { return nil }
+        return URL(string: thumb)
+    }
+
+    var fullArtworkURL: URL? {
+        guard let coverImage, !coverImage.isEmpty else { return nil }
+        return URL(string: coverImage)
+    }
+
+    var artworkURLsForPrefetch: [URL] {
+        [thumbnailArtworkURL, fullArtworkURL].compactMap(\.self)
     }
 
     enum CodingKeys: String, CodingKey {

@@ -6,6 +6,7 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var releases: [CollectionRelease] = []
     @Published private(set) var currentRelease: CollectionRelease?
     @Published private(set) var isSyncing = false
+    @Published private(set) var isPreparingNextRelease = false
     @Published var errorMessage: String?
     @Published private(set) var lastSyncedAt: Date?
 
@@ -13,6 +14,8 @@ final class AppViewModel: ObservableObject {
     private let keychain = KeychainStore()
     private let cache = CollectionCache()
     private let cacheFreshnessInterval: TimeInterval = 6 * 60 * 60
+    private var preparedRelease: CollectionRelease?
+    private var prepareNextTask: Task<Void, Never>?
 
     init() {
         self.credentials = keychain.loadCredentials() ?? DiscogsCredentials(username: "", token: "")
@@ -30,6 +33,10 @@ final class AppViewModel: ObservableObject {
 
     var needsSetup: Bool {
         !hasCredentials || releases.isEmpty
+    }
+
+    var canPickAnother: Bool {
+        releases.count > 1 && preparedRelease != nil && !isPreparingNextRelease
     }
 
     func saveCredentials() {
@@ -74,19 +81,69 @@ final class AppViewModel: ObservableObject {
     func chooseRandom() {
         guard !releases.isEmpty else {
             currentRelease = nil
+            preparedRelease = nil
+            prepareNextTask?.cancel()
+            prepareNextTask = nil
+            isPreparingNextRelease = false
             return
         }
 
         if releases.count == 1 {
             currentRelease = releases[0]
+            preparedRelease = nil
+            prepareNextTask?.cancel()
+            prepareNextTask = nil
+            isPreparingNextRelease = false
             return
         }
 
+        if let preparedRelease {
+            currentRelease = preparedRelease
+            self.preparedRelease = nil
+            prepareNextRelease()
+            return
+        }
+
+        currentRelease = randomRelease(excluding: currentRelease)
+        prepareNextRelease()
+    }
+
+    private func prepareNextRelease() {
+        guard releases.count > 1 else { return }
+
+        prepareNextTask?.cancel()
+        isPreparingNextRelease = true
+
+        let release = randomRelease(excluding: currentRelease)
+        prepareNextTask = Task { [weak self] in
+            await Self.prefetchArtwork(for: release)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                self?.preparedRelease = release
+                self?.isPreparingNextRelease = false
+            }
+        }
+    }
+
+    private func randomRelease(excluding excludedRelease: CollectionRelease?) -> CollectionRelease? {
         var next = releases.randomElement()
-        while next == currentRelease {
+        while next == excludedRelease {
             next = releases.randomElement()
         }
-        currentRelease = next
+        return next
+    }
+
+    nonisolated private static func prefetchArtwork(for release: CollectionRelease?) async {
+        guard let release else { return }
+
+        await withTaskGroup(of: Void.self) { group in
+            for url in release.basicInformation.artworkURLsForPrefetch {
+                group.addTask {
+                    _ = try? await URLSession.shared.data(from: url)
+                }
+            }
+        }
     }
 
     func signOut() {
@@ -96,6 +153,10 @@ final class AppViewModel: ObservableObject {
             credentials = DiscogsCredentials(username: "", token: "")
             releases = []
             currentRelease = nil
+            preparedRelease = nil
+            prepareNextTask?.cancel()
+            prepareNextTask = nil
+            isPreparingNextRelease = false
             lastSyncedAt = nil
             errorMessage = nil
         } catch {
