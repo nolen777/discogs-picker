@@ -28,9 +28,26 @@ jobs:
         run: git config --global --unset-all "remote.origin.fetch" || true
 
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          clean: false
+        env:
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$GITHUB_WORKSPACE"
+          cd "$GITHUB_WORKSPACE"
+
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          if [ ! -d .git ]; then
+            git init
+          fi
+
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: bearer $CHECKOUT_TOKEN" \
+            fetch --no-tags --prune --depth=1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+          git clean -ffdx
 
       - name: Install Signing Certificate
         env:
