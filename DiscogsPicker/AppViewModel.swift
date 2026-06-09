@@ -9,10 +9,12 @@ final class AppViewModel: ObservableObject {
     @Published private(set) var isPreparingNextRelease = false
     @Published var errorMessage: String?
     @Published private(set) var lastSyncedAt: Date?
+    @Published private(set) var isDisplayingExpiredCache = false
 
     private let api = DiscogsAPI()
     private let keychain = KeychainStore()
     private let cache = CollectionCache()
+    private let cacheFreshnessInterval: TimeInterval = 6 * 60 * 60
     private let autoRefreshInterval: Duration = .seconds(5 * 60)
     private var preparedRelease: CollectionRelease?
     private var prepareNextTask: Task<Void, Never>?
@@ -23,6 +25,7 @@ final class AppViewModel: ObservableObject {
         if credentials.isComplete, let cached = cache.load() {
             self.releases = cached.releases
             self.lastSyncedAt = cached.fetchedAt
+            self.isDisplayingExpiredCache = Date().timeIntervalSince(cached.fetchedAt) > cacheFreshnessInterval
             chooseRandom()
         }
     }
@@ -96,6 +99,7 @@ final class AppViewModel: ObservableObject {
             credentials = cleanCredentials
             releases = fetchedReleases
             lastSyncedAt = cached.fetchedAt
+            isDisplayingExpiredCache = false
             errorMessage = nil
 
             preparedRelease = nil
@@ -112,6 +116,9 @@ final class AppViewModel: ObservableObject {
                 chooseRandom()
             }
         } catch {
+            if isDisplayingExpiredCache {
+                clearDisplayedCollection()
+            }
             if reportErrors {
                 errorMessage = error.localizedDescription
             }
@@ -197,17 +204,22 @@ final class AppViewModel: ObservableObject {
             try keychain.clearCredentials()
             try cache.clear()
             credentials = DiscogsCredentials(username: "", token: "")
-            releases = []
-            currentRelease = nil
-            preparedRelease = nil
-            prepareNextTask?.cancel()
-            prepareNextTask = nil
-            isPreparingNextRelease = false
+            clearDisplayedCollection()
             lastSyncedAt = nil
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func clearDisplayedCollection() {
+        releases = []
+        currentRelease = nil
+        preparedRelease = nil
+        prepareNextTask?.cancel()
+        prepareNextTask = nil
+        isPreparingNextRelease = false
+        isDisplayingExpiredCache = false
     }
 
     private func trimmedCredentials() -> DiscogsCredentials {
