@@ -14,6 +14,7 @@ final class AppViewModel: ObservableObject {
     private let keychain = KeychainStore()
     private let cache = CollectionCache()
     private let cacheFreshnessInterval: TimeInterval = 6 * 60 * 60
+    private let autoRefreshInterval: Duration = .seconds(5 * 60)
     private var preparedRelease: CollectionRelease?
     private var prepareNextTask: Task<Void, Never>?
 
@@ -48,12 +49,37 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    func syncCollection() async {
+    func runAutoRefreshLoop() async {
+        await refreshCollectionIfPossible()
+
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: autoRefreshInterval)
+            } catch {
+                return
+            }
+            await refreshCollectionIfPossible()
+        }
+    }
+
+    func refreshCollectionIfPossible() async {
+        guard hasCredentials else { return }
+        await syncCollection(pickNewRelease: false, reportErrors: false)
+    }
+
+    func syncCollection(pickNewRelease: Bool = true, reportErrors: Bool = true) async {
         guard trimmedCredentials().isComplete else {
-            errorMessage = "Enter your Discogs username and token."
+            if reportErrors {
+                errorMessage = "Enter your Discogs username and token."
+            }
             return
         }
 
+        guard !isSyncing else {
+            return
+        }
+
+        let releaseBeforeSync = currentRelease
         isSyncing = true
         defer { isSyncing = false }
 
@@ -72,9 +98,24 @@ final class AppViewModel: ObservableObject {
             releases = fetchedReleases
             lastSyncedAt = cached.fetchedAt
             errorMessage = nil
-            chooseRandom()
+
+            preparedRelease = nil
+            prepareNextTask?.cancel()
+            prepareNextTask = nil
+            isPreparingNextRelease = false
+
+            if pickNewRelease || releaseBeforeSync == nil {
+                chooseRandom()
+            } else if let releaseBeforeSync, let refreshedRelease = refreshedVersion(of: releaseBeforeSync) {
+                currentRelease = refreshedRelease
+                prepareNextRelease()
+            } else {
+                chooseRandom()
+            }
         } catch {
-            errorMessage = error.localizedDescription
+            if reportErrors {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -132,6 +173,12 @@ final class AppViewModel: ObservableObject {
             next = releases.randomElement()
         }
         return next
+    }
+
+    private func refreshedVersion(of release: CollectionRelease) -> CollectionRelease? {
+        releases.first { candidate in
+            candidate.instanceId == release.instanceId
+        }
     }
 
     nonisolated private static func prefetchArtwork(for release: CollectionRelease?) async {
