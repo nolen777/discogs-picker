@@ -16,7 +16,7 @@ struct ContentView: View {
                     PickerView(viewModel: viewModel)
                 }
             }
-            .navigationTitle("Discogs Picker")
+            .navigationTitle("Crate Shuffle")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.black, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)

@@ -286,7 +286,7 @@
 				DEVELOPMENT_TEAM = UWJ88DX8WQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Discogs Picker";
+				INFOPLIST_KEY_CFBundleDisplayName = "Crate Shuffle";
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
@@ -321,7 +321,7 @@
 				DEVELOPMENT_TEAM = UWJ88DX8WQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Discogs Picker";
+				INFOPLIST_KEY_CFBundleDisplayName = "Crate Shuffle";
 				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";

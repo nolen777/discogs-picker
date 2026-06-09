@@ -1,4 +1,4 @@
-# Discogs Picker
+# Crate Shuffle
 
 A tiny SwiftUI iOS app that syncs a Discogs collection, caches it locally, and picks a random record to play.
 
@@ -22,5 +22,3 @@ xcodebuild -project DiscogsPicker.xcodeproj -scheme DiscogsPicker -configuration
 ## TestFlight
 
 The GitHub Actions workflow in `.github/workflows/testflight.yml` archives and uploads builds to TestFlight from the self-hosted macOS runner. See `docs/testflight-setup.md` for the Apple Developer and GitHub secrets checklist.
-
-The project currently has no app icon asset catalog. Add one before submitting to App Review.
