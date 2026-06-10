@@ -408,6 +408,9 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
                         finishSwipe(translation: value.translation.width)
                     }
             )
+            .onChange(of: release.instanceId) {
+                syncCenterToReleaseIfIdle()
+            }
     }
 
     private func updateSwipe(translation: CGFloat) {
@@ -446,11 +449,18 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     }
 
     private func ensureSwipeSnapshot() {
-        guard centerRelease == nil else { return }
-
         centerRelease = release
         previousRelease = viewModel.previousReleaseForNavigation
         nextRelease = viewModel.nextReleaseForNavigation
+    }
+
+    private func syncCenterToReleaseIfIdle() {
+        guard !isCompletingSwipe else { return }
+
+        centerRelease = release
+        previousRelease = nil
+        nextRelease = nil
+        dragOffset = 0
     }
 
     private func direction(for translation: CGFloat) -> RecordSwipeDirection {
@@ -493,8 +503,6 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
 
             if !didNavigate {
                 bounce(direction: direction)
-            } else {
-                resetSwipeSnapshot(after: 0.05, remainingAttempts: 4)
             }
         }
     }
@@ -514,22 +522,9 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
 
     private func resetSwipeSnapshot(after delay: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            centerRelease = nil
             previousRelease = nil
             nextRelease = nil
             isCompletingSwipe = false
-        }
-    }
-
-    private func resetSwipeSnapshot(after delay: TimeInterval, remainingAttempts: Int) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            if centerRelease?.instanceId != release.instanceId || remainingAttempts <= 0 {
-                centerRelease = nil
-                previousRelease = nil
-                nextRelease = nil
-            } else {
-                resetSwipeSnapshot(after: delay, remainingAttempts: remainingAttempts - 1)
-            }
         }
     }
 }
