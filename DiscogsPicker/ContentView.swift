@@ -293,29 +293,22 @@ private struct PickerView: View {
 
     private func metadata(for release: CollectionRelease, textAlignment: TextAlignment) -> some View {
         VStack(alignment: textAlignment == .leading ? .leading : .center, spacing: 8) {
-            Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
-                VStack(alignment: textAlignment == .leading ? .leading : .center, spacing: 8) {
-                    Text(release.basicInformation.title)
-                        .font(.title.bold())
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(textAlignment)
-                        .lineLimit(4)
-                        .minimumScaleFactor(0.76)
+            Text(release.basicInformation.title)
+                .font(.title.bold())
+                .foregroundStyle(.white)
+                .multilineTextAlignment(textAlignment)
+                .lineLimit(4)
+                .minimumScaleFactor(0.76)
 
-                    Text(release.displayArtist)
-                        .font(.title3)
-                        .foregroundStyle(.white.opacity(0.78))
-                        .multilineTextAlignment(textAlignment)
-                }
-                .frame(maxWidth: .infinity, alignment: textAlignment == .leading ? .leading : .center)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("Opens this release in Discogs")
+            Text(release.displayArtist)
+                .font(.title3)
+                .foregroundStyle(.white.opacity(0.78))
+                .multilineTextAlignment(textAlignment)
 
             Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
                 Text("Data provided by Discogs")
                     .font(.footnote.weight(.medium))
+                    .underline()
             }
             .tint(.white.opacity(0.82))
             .padding(.top, 4)
