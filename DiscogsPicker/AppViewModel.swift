@@ -16,8 +16,10 @@ final class AppViewModel: ObservableObject {
     private let cache = CollectionCache()
     private let cacheFreshnessInterval: TimeInterval = 6 * 60 * 60
     private let autoRefreshInterval: Duration = .seconds(5 * 60)
+    private let recentPickLimit = 15
     private var preparedRelease: CollectionRelease?
     private var prepareNextTask: Task<Void, Never>?
+    private var recentlyPickedInstanceIds: [Int] = []
 
     init() {
         self.credentials = keychain.loadCredentials() ?? DiscogsCredentials(username: "", token: "")
@@ -99,6 +101,7 @@ final class AppViewModel: ObservableObject {
 
             credentials = cleanCredentials
             releases = fetchedReleases
+            pruneRecentPicks()
             lastSyncedAt = cached.fetchedAt
             isDisplayingExpiredCache = false
             errorMessage = nil
@@ -138,6 +141,7 @@ final class AppViewModel: ObservableObject {
 
         if releases.count == 1 {
             currentRelease = releases[0]
+            rememberPicked(releases[0])
             preparedRelease = nil
             prepareNextTask?.cancel()
             prepareNextTask = nil
@@ -147,12 +151,14 @@ final class AppViewModel: ObservableObject {
 
         if let preparedRelease {
             currentRelease = preparedRelease
+            rememberPicked(preparedRelease)
             self.preparedRelease = nil
             prepareNextRelease()
             return
         }
 
         currentRelease = randomRelease(excluding: currentRelease)
+        rememberPicked(currentRelease)
         prepareNextRelease()
     }
 
@@ -182,6 +188,7 @@ final class AppViewModel: ObservableObject {
 
         if let refreshedPrepared {
             currentRelease = refreshedPrepared
+            rememberPicked(refreshedPrepared)
             preparedRelease = nil
             prepareNextTask?.cancel()
             prepareNextTask = nil
@@ -216,11 +223,43 @@ final class AppViewModel: ObservableObject {
     }
 
     private func randomRelease(excluding excludedRelease: CollectionRelease?) -> CollectionRelease? {
-        var next = releases.randomElement()
-        while next == excludedRelease {
-            next = releases.randomElement()
+        let eligibleReleases = releases.filter { candidate in
+            candidate.instanceId != excludedRelease?.instanceId
         }
-        return next
+        guard !eligibleReleases.isEmpty else { return nil }
+
+        let recentPicks = Set(recentlyPickedInstanceIds)
+        let preferredReleases = eligibleReleases.filter { candidate in
+            !recentPicks.contains(candidate.instanceId)
+        }
+
+        return (preferredReleases.isEmpty ? eligibleReleases : preferredReleases).randomElement()
+    }
+
+    private func rememberPicked(_ release: CollectionRelease?) {
+        guard let release else { return }
+
+        recentlyPickedInstanceIds.removeAll { instanceId in
+            instanceId == release.instanceId
+        }
+        recentlyPickedInstanceIds.append(release.instanceId)
+
+        let limit = min(recentPickLimit, max(releases.count - 1, 0))
+        if recentlyPickedInstanceIds.count > limit {
+            recentlyPickedInstanceIds.removeFirst(recentlyPickedInstanceIds.count - limit)
+        }
+    }
+
+    private func pruneRecentPicks() {
+        let releaseIds = Set(releases.map(\.instanceId))
+        recentlyPickedInstanceIds.removeAll { instanceId in
+            !releaseIds.contains(instanceId)
+        }
+
+        let limit = min(recentPickLimit, max(releases.count - 1, 0))
+        if recentlyPickedInstanceIds.count > limit {
+            recentlyPickedInstanceIds.removeFirst(recentlyPickedInstanceIds.count - limit)
+        }
     }
 
     private func refreshedVersion(
@@ -265,6 +304,7 @@ final class AppViewModel: ObservableObject {
         prepareNextTask = nil
         isPreparingNextRelease = false
         isDisplayingExpiredCache = false
+        recentlyPickedInstanceIds = []
     }
 
     private func trimmedCredentials() -> DiscogsCredentials {
