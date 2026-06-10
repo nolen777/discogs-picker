@@ -308,6 +308,7 @@ private struct PickerView: View {
             Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
                 Text("Data provided by Discogs")
                     .font(.footnote.weight(.medium))
+                    .underline()
             }
             .tint(.white.opacity(0.82))
             .padding(.top, 4)
