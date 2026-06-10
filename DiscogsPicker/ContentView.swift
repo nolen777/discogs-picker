@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @StateObject private var viewModel = AppViewModel()
 
     var body: some View {
@@ -16,8 +17,9 @@ struct ContentView: View {
                     PickerView(viewModel: viewModel)
                 }
             }
-            .navigationTitle("Crate Shuffle")
+            .navigationTitle(showsNavigationChrome ? "Crate Shuffle" : "")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar(showsNavigationChrome ? .visible : .hidden, for: .navigationBar)
             .toolbarBackground(.black, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .tint(.white)
@@ -51,6 +53,10 @@ struct ContentView: View {
                 Text(viewModel.errorMessage ?? "")
             }
         }
+    }
+
+    private var showsNavigationChrome: Bool {
+        viewModel.needsSetup || verticalSizeClass != .compact
     }
 
     private var errorBinding: Binding<Bool> {
@@ -190,60 +196,138 @@ private struct PickerView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(spacing: 18) {
-                if let release = viewModel.currentRelease {
-                    ArtworkView(
-                        thumbnailURL: release.basicInformation.thumbnailArtworkURL,
-                        fullSizeURL: release.basicInformation.fullArtworkURL
-                    )
-                        .frame(width: proxy.size.width, height: proxy.size.width)
-
-                    VStack(spacing: 8) {
-                        Text(release.basicInformation.title)
-                            .font(.title.bold())
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                            .minimumScaleFactor(0.76)
-
-                        Text(release.displayArtist)
-                            .font(.title3)
-                            .foregroundStyle(.white.opacity(0.78))
-                            .multilineTextAlignment(.center)
-
-                        Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
-                            Text("Data provided by Discogs")
-                                .font(.footnote.weight(.medium))
-                        }
-                        .tint(.white.opacity(0.82))
-                        .padding(.top, 4)
-                    }
-                    .padding(.horizontal, 20)
-                }
-
-                Spacer(minLength: 0)
-
-                VStack(spacing: 12) {
-                    Button {
-                        viewModel.chooseRandom()
-                    } label: {
-                        Label(viewModel.isPreparingNextRelease ? "Getting Next" : "Pick Another", systemImage: "shuffle")
-                            .frame(maxWidth: .infinity)
-                            .foregroundStyle(.white)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
-                    .controlSize(.large)
-                    .disabled(!viewModel.canPickAnother)
-                    .opacity(viewModel.canPickAnother ? 1 : 0.72)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 30)
+            if proxy.size.width > proxy.size.height {
+                landscapeLayout(size: proxy.size)
+            } else {
+                portraitLayout(size: proxy.size)
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .background(Color.black)
         }
         .background(Color.black)
+    }
+
+    private func portraitLayout(size: CGSize) -> some View {
+        VStack(spacing: 18) {
+            if let release = viewModel.currentRelease {
+                ArtworkView(
+                    thumbnailURL: release.basicInformation.thumbnailArtworkURL,
+                    fullSizeURL: release.basicInformation.fullArtworkURL
+                )
+                    .frame(width: size.width, height: size.width)
+
+                metadata(for: release, textAlignment: .center)
+                    .padding(.horizontal, 20)
+            }
+
+            Spacer(minLength: 0)
+
+            pickAnotherButton
+                .padding(.horizontal, 20)
+                .padding(.bottom, 30)
+        }
+        .frame(width: size.width, height: size.height)
+        .background(Color.black)
+    }
+
+    private func landscapeLayout(size: CGSize) -> some View {
+        let artworkSize = size.height
+        let controlsWidth = min(max(size.width - artworkSize - 48, 160), 430)
+
+        return HStack(alignment: .center, spacing: 24) {
+            if let release = viewModel.currentRelease {
+                ArtworkView(
+                    thumbnailURL: release.basicInformation.thumbnailArtworkURL,
+                    fullSizeURL: release.basicInformation.fullArtworkURL
+                )
+                    .frame(width: artworkSize, height: artworkSize)
+
+                VStack(alignment: .center, spacing: 24) {
+                    ZStack {
+                        Text("Crate Shuffle")
+                            .font(.headline.bold())
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+
+                        HStack {
+                            Spacer()
+                            pickerMenu
+                        }
+                    }
+                    .frame(maxWidth: controlsWidth)
+
+                    Spacer(minLength: 0)
+
+                    metadata(for: release, textAlignment: .center)
+                        .frame(maxWidth: controlsWidth)
+
+                    Spacer(minLength: 0)
+
+                    pickAnotherButton
+                        .frame(maxWidth: controlsWidth)
+
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: artworkSize, alignment: .center)
+                .padding(.trailing, 32)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .background(Color.black)
+        .ignoresSafeArea(.container, edges: .vertical)
+    }
+
+    private var pickerMenu: some View {
+        Menu {
+            Button("Refresh Collection") {
+                Task { await viewModel.syncCollection() }
+            }
+            Button("Reset Credentials", role: .destructive) {
+                viewModel.signOut()
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title2)
+                .foregroundStyle(.white)
+        }
+        .disabled(viewModel.isSyncing)
+    }
+
+    private func metadata(for release: CollectionRelease, textAlignment: TextAlignment) -> some View {
+        VStack(alignment: textAlignment == .leading ? .leading : .center, spacing: 8) {
+            Text(release.basicInformation.title)
+                .font(.title.bold())
+                .foregroundStyle(.white)
+                .multilineTextAlignment(textAlignment)
+                .lineLimit(4)
+                .minimumScaleFactor(0.76)
+
+            Text(release.displayArtist)
+                .font(.title3)
+                .foregroundStyle(.white.opacity(0.78))
+                .multilineTextAlignment(textAlignment)
+
+            Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
+                Text("Data provided by Discogs")
+                    .font(.footnote.weight(.medium))
+            }
+            .tint(.white.opacity(0.82))
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: textAlignment == .leading ? .leading : .center)
+    }
+
+    private var pickAnotherButton: some View {
+        Button {
+            viewModel.chooseRandom()
+        } label: {
+            Label(viewModel.isPreparingNextRelease ? "Getting Next" : "Pick Another", systemImage: "shuffle")
+                .frame(maxWidth: .infinity)
+                .foregroundStyle(.white)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.blue)
+        .controlSize(.large)
+        .disabled(!viewModel.canPickAnother)
+        .opacity(viewModel.canPickAnother ? 1 : 0.72)
     }
 }
 
