@@ -361,15 +361,20 @@ private enum RecordSwipeDirection {
 }
 
 private struct SwipeNavigableReleaseView<Content: View>: View {
+    private struct Panel: Identifiable {
+        let id: Int
+        var release: CollectionRelease
+        var position: Int
+    }
+
     @ObservedObject var viewModel: AppViewModel
     let release: CollectionRelease
     let slideDistance: CGFloat
     @ViewBuilder var content: (CollectionRelease) -> Content
 
     @State private var dragOffset: CGFloat = 0
-    @State private var centerRelease: CollectionRelease?
-    @State private var previousRelease: CollectionRelease?
-    @State private var nextRelease: CollectionRelease?
+    @State private var panels: [Panel] = []
+    @State private var nextPanelID = 0
     @State private var isCompletingSwipe = false
 
     private let swipeThreshold: CGFloat = 60
@@ -378,24 +383,15 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     private let completionDuration = 0.22
 
     var body: some View {
-        let centerRelease = centerRelease ?? release
-
         ZStack {
-            if let previousRelease {
-                content(previousRelease)
-                    .id(previousRelease.instanceId)
-                    .offset(x: dragOffset - slideDistance)
+            if panels.isEmpty {
+                content(release)
+            } else {
+                ForEach(panels) { panel in
+                    content(panel.release)
+                        .offset(x: CGFloat(panel.position) * slideDistance + dragOffset)
+                }
             }
-
-            if let nextRelease {
-                content(nextRelease)
-                    .id(nextRelease.instanceId)
-                    .offset(x: dragOffset + slideDistance)
-            }
-
-            content(centerRelease)
-                .id(centerRelease.instanceId)
-                .offset(x: dragOffset)
         }
             .clipped()
             .contentShape(Rectangle())
@@ -416,9 +412,9 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     private func updateSwipe(translation: CGFloat) {
         guard !isCompletingSwipe else { return }
 
-        ensureSwipeSnapshot()
+        ensurePanels()
         let direction = direction(for: translation)
-        let target = targetRelease(for: direction)
+        let target = targetPanel(for: direction)
 
         if target == nil {
             dragOffset = min(max(translation, -unavailableDragLimit), unavailableDragLimit)
@@ -428,15 +424,15 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     }
 
     private func finishSwipe(translation: CGFloat) {
-        ensureSwipeSnapshot()
+        ensurePanels()
         let direction = direction(for: translation)
-        let target = targetRelease(for: direction)
+        let target = targetPanel(for: direction)
 
         guard abs(translation) >= swipeThreshold else {
             withAnimation(.spring(response: 0.24, dampingFraction: 0.78)) {
                 dragOffset = 0
             }
-            resetSwipeSnapshot(after: 0.18)
+            clearSidePanels(after: 0.18)
             return
         }
 
@@ -448,18 +444,27 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
         completeSwipe(direction: direction, target: target)
     }
 
-    private func ensureSwipeSnapshot() {
-        centerRelease = release
-        previousRelease = viewModel.previousReleaseForNavigation
-        nextRelease = viewModel.nextReleaseForNavigation
+    private func ensurePanels() {
+        let centerRelease = centeredPanel?.release ?? release
+        var nextPanels: [Panel] = []
+
+        if let previousRelease = viewModel.previousReleaseForNavigation {
+            nextPanels.append(existingPanel(at: -1, fallbackRelease: previousRelease))
+        }
+
+        nextPanels.append(existingPanel(at: 0, fallbackRelease: centerRelease))
+
+        if let nextRelease = viewModel.nextReleaseForNavigation {
+            nextPanels.append(existingPanel(at: 1, fallbackRelease: nextRelease))
+        }
+
+        panels = nextPanels
     }
 
     private func syncCenterToReleaseIfIdle() {
         guard !isCompletingSwipe else { return }
 
-        centerRelease = release
-        previousRelease = nil
-        nextRelease = nil
+        panels = [existingPanel(at: 0, fallbackRelease: release)]
         dragOffset = 0
     }
 
@@ -467,16 +472,29 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
         translation >= 0 ? .backward : .forward
     }
 
-    private func targetRelease(for direction: RecordSwipeDirection) -> CollectionRelease? {
+    private func targetPanel(for direction: RecordSwipeDirection) -> Panel? {
         switch direction {
         case .backward:
-            viewModel.previousReleaseForNavigation
+            panels.first { $0.position == -1 }
         case .forward:
-            viewModel.nextReleaseForNavigation
+            panels.first { $0.position == 1 }
         }
     }
 
-    private func completeSwipe(direction: RecordSwipeDirection, target: CollectionRelease) {
+    private var centeredPanel: Panel? {
+        panels.first { $0.position == 0 }
+    }
+
+    private func existingPanel(at position: Int, fallbackRelease: CollectionRelease) -> Panel {
+        if let panel = panels.first(where: { $0.position == position }) {
+            return Panel(id: panel.id, release: fallbackRelease, position: position)
+        }
+
+        defer { nextPanelID += 1 }
+        return Panel(id: nextPanelID, release: fallbackRelease, position: position)
+    }
+
+    private func completeSwipe(direction: RecordSwipeDirection, target: Panel) {
         isCompletingSwipe = true
 
         withAnimation(.easeOut(duration: completionDuration)) {
@@ -494,9 +512,7 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                centerRelease = target
-                previousRelease = nil
-                nextRelease = nil
+                recenterPanels(on: target.id, direction: direction)
                 dragOffset = 0
                 isCompletingSwipe = false
             }
@@ -516,14 +532,45 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
             withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
                 dragOffset = 0
             }
-            resetSwipeSnapshot(after: 0.2)
+            clearSidePanels(after: 0.2)
         }
     }
 
-    private func resetSwipeSnapshot(after delay: TimeInterval) {
+    private func recenterPanels(on targetID: Int, direction: RecordSwipeDirection) {
+        let targetOffset = panels.first { $0.id == targetID }?.position ?? 0
+
+        panels = panels.compactMap { panel in
+            var panel = panel
+            panel.position -= targetOffset
+            return abs(panel.position) <= 1 ? panel : nil
+        }
+
+        refreshOffscreenPanels(after: direction)
+    }
+
+    private func refreshOffscreenPanels(after direction: RecordSwipeDirection) {
+        switch direction {
+        case .backward:
+            if panels.contains(where: { $0.position == -1 }) == false,
+               let previousRelease = viewModel.previousReleaseForNavigation {
+                panels.append(newPanel(release: previousRelease, position: -1))
+            }
+        case .forward:
+            if panels.contains(where: { $0.position == 1 }) == false,
+               let nextRelease = viewModel.nextReleaseForNavigation {
+                panels.append(newPanel(release: nextRelease, position: 1))
+            }
+        }
+    }
+
+    private func newPanel(release: CollectionRelease, position: Int) -> Panel {
+        defer { nextPanelID += 1 }
+        return Panel(id: nextPanelID, release: release, position: position)
+    }
+
+    private func clearSidePanels(after delay: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            previousRelease = nil
-            nextRelease = nil
+            panels.removeAll { $0.position != 0 }
             isCompletingSwipe = false
         }
     }
