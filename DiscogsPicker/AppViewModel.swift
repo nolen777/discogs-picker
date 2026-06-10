@@ -16,8 +16,11 @@ final class AppViewModel: ObservableObject {
     private let cache = CollectionCache()
     private let cacheFreshnessInterval: TimeInterval = 6 * 60 * 60
     private let autoRefreshInterval: Duration = .seconds(5 * 60)
+    private let recentPickLimit = 15
     private var preparedRelease: CollectionRelease?
     private var prepareNextTask: Task<Void, Never>?
+    private var releaseQueue: [CollectionRelease] = []
+    private var recentlyPickedInstanceIds: [Int] = []
 
     init() {
         self.credentials = keychain.loadCredentials() ?? DiscogsCredentials(username: "", token: "")
@@ -90,6 +93,7 @@ final class AppViewModel: ObservableObject {
             let fetchedReleases = try await api.fetchCollection(credentials: cleanCredentials)
             let releaseToPreserve = currentRelease
             let preparedReleaseToPreserve = preparedRelease
+            let collectionChanged = releaseIds(in: releases) != releaseIds(in: fetchedReleases)
             let cached = CachedCollection(
                 username: cleanCredentials.username,
                 fetchedAt: Date(),
@@ -99,6 +103,7 @@ final class AppViewModel: ObservableObject {
 
             credentials = cleanCredentials
             releases = fetchedReleases
+            pruneRecentPicks()
             lastSyncedAt = cached.fetchedAt
             isDisplayingExpiredCache = false
             errorMessage = nil
@@ -108,12 +113,14 @@ final class AppViewModel: ObservableObject {
                 prepareNextTask?.cancel()
                 prepareNextTask = nil
                 isPreparingNextRelease = false
+                rebuildQueue(excluding: [], avoidingRecent: collectionChanged)
                 chooseRandom()
             } else {
                 applyRefreshedSelection(
                     current: releaseToPreserve,
                     prepared: preparedReleaseToPreserve,
-                    refreshedReleases: fetchedReleases
+                    refreshedReleases: fetchedReleases,
+                    collectionChanged: collectionChanged
                 )
             }
         } catch {
@@ -130,6 +137,7 @@ final class AppViewModel: ObservableObject {
         guard !releases.isEmpty else {
             currentRelease = nil
             preparedRelease = nil
+            releaseQueue = []
             prepareNextTask?.cancel()
             prepareNextTask = nil
             isPreparingNextRelease = false
@@ -138,7 +146,9 @@ final class AppViewModel: ObservableObject {
 
         if releases.count == 1 {
             currentRelease = releases[0]
+            rememberPicked(releases[0])
             preparedRelease = nil
+            releaseQueue = []
             prepareNextTask?.cancel()
             prepareNextTask = nil
             isPreparingNextRelease = false
@@ -147,19 +157,22 @@ final class AppViewModel: ObservableObject {
 
         if let preparedRelease {
             currentRelease = preparedRelease
+            rememberPicked(preparedRelease)
             self.preparedRelease = nil
             prepareNextRelease()
             return
         }
 
-        currentRelease = randomRelease(excluding: currentRelease)
+        currentRelease = nextQueuedRelease(excluding: currentRelease)
+        rememberPicked(currentRelease)
         prepareNextRelease()
     }
 
     private func applyRefreshedSelection(
         current: CollectionRelease?,
         prepared: CollectionRelease?,
-        refreshedReleases: [CollectionRelease]
+        refreshedReleases: [CollectionRelease],
+        collectionChanged: Bool
     ) {
         let refreshedCurrent = current.flatMap { refreshedVersion(of: $0, in: refreshedReleases) }
         let refreshedPrepared = prepared.flatMap { refreshedVersion(of: $0, in: refreshedReleases) }
@@ -170,11 +183,19 @@ final class AppViewModel: ObservableObject {
             if let refreshedPrepared, refreshedPrepared != refreshedCurrent {
                 preparedRelease = refreshedPrepared
                 isPreparingNextRelease = false
+                reconcileQueue(
+                    excluding: [refreshedCurrent.instanceId, refreshedPrepared.instanceId],
+                    collectionChanged: collectionChanged
+                )
             } else {
                 preparedRelease = nil
                 prepareNextTask?.cancel()
                 prepareNextTask = nil
                 isPreparingNextRelease = false
+                reconcileQueue(
+                    excluding: [refreshedCurrent.instanceId],
+                    collectionChanged: collectionChanged
+                )
                 prepareNextRelease()
             }
             return
@@ -182,10 +203,15 @@ final class AppViewModel: ObservableObject {
 
         if let refreshedPrepared {
             currentRelease = refreshedPrepared
+            rememberPicked(refreshedPrepared)
             preparedRelease = nil
             prepareNextTask?.cancel()
             prepareNextTask = nil
             isPreparingNextRelease = false
+            reconcileQueue(
+                excluding: [refreshedPrepared.instanceId],
+                collectionChanged: collectionChanged
+            )
             prepareNextRelease()
             return
         }
@@ -194,6 +220,7 @@ final class AppViewModel: ObservableObject {
         prepareNextTask?.cancel()
         prepareNextTask = nil
         isPreparingNextRelease = false
+        rebuildQueue(excluding: [], avoidingRecent: collectionChanged)
         chooseRandom()
     }
 
@@ -203,7 +230,7 @@ final class AppViewModel: ObservableObject {
         prepareNextTask?.cancel()
         isPreparingNextRelease = true
 
-        let release = randomRelease(excluding: currentRelease)
+        let release = nextQueuedRelease(excluding: currentRelease)
         prepareNextTask = Task { [weak self] in
             await Self.prefetchArtwork(for: release)
             guard !Task.isCancelled else { return }
@@ -215,12 +242,89 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    private func randomRelease(excluding excludedRelease: CollectionRelease?) -> CollectionRelease? {
-        var next = releases.randomElement()
-        while next == excludedRelease {
-            next = releases.randomElement()
+    private func nextQueuedRelease(excluding excludedRelease: CollectionRelease?) -> CollectionRelease? {
+        let excludedIds = Set([excludedRelease?.instanceId].compactMap(\.self))
+        releaseQueue.removeAll { release in
+            excludedIds.contains(release.instanceId)
         }
-        return next
+
+        if releaseQueue.isEmpty {
+            rebuildQueue(excluding: excludedIds, avoidingRecent: false)
+        }
+
+        guard !releaseQueue.isEmpty else { return nil }
+        return releaseQueue.removeFirst()
+    }
+
+    private func rebuildQueue(excluding excludedIds: Set<Int>, avoidingRecent: Bool) {
+        let eligibleReleases = releases.filter { candidate in
+            !excludedIds.contains(candidate.instanceId)
+        }
+        guard !eligibleReleases.isEmpty else {
+            releaseQueue = []
+            return
+        }
+
+        guard avoidingRecent else {
+            releaseQueue = eligibleReleases.shuffled()
+            return
+        }
+
+        let recentPicks = Set(recentlyPickedInstanceIds)
+        let preferredReleases = eligibleReleases.filter { candidate in
+            !recentPicks.contains(candidate.instanceId)
+        }
+        guard !preferredReleases.isEmpty else {
+            releaseQueue = eligibleReleases.shuffled()
+            return
+        }
+
+        let deferredRecentReleases = eligibleReleases.filter { candidate in
+            recentPicks.contains(candidate.instanceId)
+        }
+        releaseQueue = preferredReleases.shuffled() + deferredRecentReleases.shuffled()
+    }
+
+    private func reconcileQueue(excluding excludedIds: Set<Int>, collectionChanged: Bool) {
+        if collectionChanged {
+            rebuildQueue(excluding: excludedIds, avoidingRecent: true)
+            return
+        }
+
+        releaseQueue = releaseQueue.compactMap { release in
+            guard !excludedIds.contains(release.instanceId) else { return nil }
+            return refreshedVersion(of: release, in: releases)
+        }
+    }
+
+    private func rememberPicked(_ release: CollectionRelease?) {
+        guard let release else { return }
+
+        recentlyPickedInstanceIds.removeAll { instanceId in
+            instanceId == release.instanceId
+        }
+        recentlyPickedInstanceIds.append(release.instanceId)
+
+        let limit = min(recentPickLimit, max(releases.count - 1, 0))
+        if recentlyPickedInstanceIds.count > limit {
+            recentlyPickedInstanceIds.removeFirst(recentlyPickedInstanceIds.count - limit)
+        }
+    }
+
+    private func pruneRecentPicks() {
+        let releaseIds = Set(releases.map(\.instanceId))
+        recentlyPickedInstanceIds.removeAll { instanceId in
+            !releaseIds.contains(instanceId)
+        }
+
+        let limit = min(recentPickLimit, max(releases.count - 1, 0))
+        if recentlyPickedInstanceIds.count > limit {
+            recentlyPickedInstanceIds.removeFirst(recentlyPickedInstanceIds.count - limit)
+        }
+    }
+
+    private func releaseIds(in releases: [CollectionRelease]) -> Set<Int> {
+        Set(releases.map(\.instanceId))
     }
 
     private func refreshedVersion(
@@ -265,6 +369,8 @@ final class AppViewModel: ObservableObject {
         prepareNextTask = nil
         isPreparingNextRelease = false
         isDisplayingExpiredCache = false
+        releaseQueue = []
+        recentlyPickedInstanceIds = []
     }
 
     private func trimmedCredentials() -> DiscogsCredentials {
