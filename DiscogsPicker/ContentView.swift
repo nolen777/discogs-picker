@@ -358,13 +358,6 @@ private enum RecordSwipeDirection {
         case .forward: -1
         }
     }
-
-    var targetStartOffsetSign: CGFloat {
-        switch self {
-        case .backward: -1
-        case .forward: 1
-        }
-    }
 }
 
 private struct SwipeNavigableReleaseView<Content: View>: View {
@@ -374,10 +367,10 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     @ViewBuilder var content: (CollectionRelease) -> Content
 
     @State private var dragOffset: CGFloat = 0
-    @State private var targetRelease: CollectionRelease?
-    @State private var swipeDirection: RecordSwipeDirection?
+    @State private var centerRelease: CollectionRelease?
+    @State private var previousRelease: CollectionRelease?
+    @State private var nextRelease: CollectionRelease?
     @State private var isCompletingSwipe = false
-    @State private var lockedRelease: CollectionRelease?
 
     private let swipeThreshold: CGFloat = 60
     private let unavailableDragLimit: CGFloat = 64
@@ -385,15 +378,23 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     private let completionDuration = 0.22
 
     var body: some View {
-        let visibleRelease = lockedRelease ?? release
+        let centerRelease = centerRelease ?? release
 
         ZStack {
-            if let targetRelease, let swipeDirection {
-                content(targetRelease)
-                    .offset(x: dragOffset + swipeDirection.targetStartOffsetSign * slideDistance)
+            if let previousRelease {
+                content(previousRelease)
+                    .id(previousRelease.instanceId)
+                    .offset(x: dragOffset - slideDistance)
             }
 
-            content(visibleRelease)
+            if let nextRelease {
+                content(nextRelease)
+                    .id(nextRelease.instanceId)
+                    .offset(x: dragOffset + slideDistance)
+            }
+
+            content(centerRelease)
+                .id(centerRelease.instanceId)
                 .offset(x: dragOffset)
         }
             .clipped()
@@ -412,11 +413,9 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     private func updateSwipe(translation: CGFloat) {
         guard !isCompletingSwipe else { return }
 
-        let direction = swipeDirection ?? direction(for: translation)
-        let target = targetRelease ?? targetRelease(for: direction)
-
-        swipeDirection = direction
-        targetRelease = target
+        ensureSwipeSnapshot()
+        let direction = direction(for: translation)
+        let target = targetRelease(for: direction)
 
         if target == nil {
             dragOffset = min(max(translation, -unavailableDragLimit), unavailableDragLimit)
@@ -426,23 +425,32 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     }
 
     private func finishSwipe(translation: CGFloat) {
-        let direction = swipeDirection ?? direction(for: translation)
-        let target = targetRelease ?? targetRelease(for: direction)
+        ensureSwipeSnapshot()
+        let direction = direction(for: translation)
+        let target = targetRelease(for: direction)
 
         guard abs(translation) >= swipeThreshold else {
             withAnimation(.spring(response: 0.24, dampingFraction: 0.78)) {
                 dragOffset = 0
             }
-            resetTarget(after: 0.18)
+            resetSwipeSnapshot(after: 0.18)
             return
         }
 
-        guard let target else {
+        guard target != nil else {
             bounce(direction: direction)
             return
         }
 
-        completeSwipe(direction: direction, target: target)
+        completeSwipe(direction: direction)
+    }
+
+    private func ensureSwipeSnapshot() {
+        guard centerRelease == nil else { return }
+
+        centerRelease = release
+        previousRelease = viewModel.previousReleaseForNavigation
+        nextRelease = viewModel.nextReleaseForNavigation
     }
 
     private func direction(for translation: CGFloat) -> RecordSwipeDirection {
@@ -458,9 +466,8 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
         }
     }
 
-    private func completeSwipe(direction: RecordSwipeDirection, target: CollectionRelease) {
+    private func completeSwipe(direction: RecordSwipeDirection) {
         isCompletingSwipe = true
-        lockedRelease = target
 
         withAnimation(.easeOut(duration: completionDuration)) {
             dragOffset = direction.completionOffsetSign * slideDistance
@@ -478,25 +485,18 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
             transaction.disablesAnimations = true
             withTransaction(transaction) {
                 dragOffset = 0
-                swipeDirection = nil
                 isCompletingSwipe = false
             }
 
             if !didNavigate {
-                lockedRelease = nil
-                targetRelease = nil
                 bounce(direction: direction)
             } else {
-                targetRelease = nil
-                clearLockedRelease(after: 0.05, remainingAttempts: 4)
+                resetSwipeSnapshot(after: 0.05, remainingAttempts: 4)
             }
         }
     }
 
     private func bounce(direction: RecordSwipeDirection) {
-        targetRelease = nil
-        swipeDirection = direction
-
         withAnimation(.spring(response: 0.16, dampingFraction: 0.55)) {
             dragOffset = direction.completionOffsetSign * bounceDistance
         }
@@ -505,24 +505,27 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
             withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
                 dragOffset = 0
             }
-            resetTarget(after: 0.2)
+            resetSwipeSnapshot(after: 0.2)
         }
     }
 
-    private func resetTarget(after delay: TimeInterval) {
+    private func resetSwipeSnapshot(after delay: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            targetRelease = nil
-            swipeDirection = nil
+            centerRelease = nil
+            previousRelease = nil
+            nextRelease = nil
             isCompletingSwipe = false
         }
     }
 
-    private func clearLockedRelease(after delay: TimeInterval, remainingAttempts: Int) {
+    private func resetSwipeSnapshot(after delay: TimeInterval, remainingAttempts: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            if release.instanceId == lockedRelease?.instanceId || remainingAttempts <= 0 {
-                lockedRelease = nil
+            if centerRelease?.instanceId != release.instanceId || remainingAttempts <= 0 {
+                centerRelease = nil
+                previousRelease = nil
+                nextRelease = nil
             } else {
-                clearLockedRelease(after: delay, remainingAttempts: remainingAttempts - 1)
+                resetSwipeSnapshot(after: delay, remainingAttempts: remainingAttempts - 1)
             }
         }
     }
