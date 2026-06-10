@@ -212,7 +212,8 @@ private struct PickerView: View {
                     thumbnailURL: release.basicInformation.thumbnailArtworkURL,
                     fullSizeURL: release.basicInformation.fullArtworkURL
                 )
-                    .frame(width: size.width, height: size.width)
+                .frame(width: size.width, height: size.width)
+                .recordSwipeNavigation(viewModel: viewModel)
 
                 metadata(for: release, textAlignment: .center)
                     .padding(.horizontal, 20)
@@ -238,7 +239,8 @@ private struct PickerView: View {
                     thumbnailURL: release.basicInformation.thumbnailArtworkURL,
                     fullSizeURL: release.basicInformation.fullArtworkURL
                 )
-                    .frame(width: artworkSize, height: artworkSize)
+                .frame(width: artworkSize, height: artworkSize)
+                .recordSwipeNavigation(viewModel: viewModel)
 
                 VStack(alignment: .center, spacing: 24) {
                     ZStack {
@@ -293,6 +295,22 @@ private struct PickerView: View {
 
     private func metadata(for release: CollectionRelease, textAlignment: TextAlignment) -> some View {
         VStack(alignment: textAlignment == .leading ? .leading : .center, spacing: 8) {
+            releaseIdentity(for: release, textAlignment: textAlignment)
+                .recordSwipeNavigation(viewModel: viewModel)
+
+            Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
+                Text("Data provided by Discogs")
+                    .font(.footnote.weight(.medium))
+                    .underline()
+            }
+            .tint(.white.opacity(0.82))
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: textAlignment == .leading ? .leading : .center)
+    }
+
+    private func releaseIdentity(for release: CollectionRelease, textAlignment: TextAlignment) -> some View {
+        VStack(alignment: textAlignment == .leading ? .leading : .center, spacing: 8) {
             Text(release.basicInformation.title)
                 .font(.title.bold())
                 .foregroundStyle(.white)
@@ -304,16 +322,9 @@ private struct PickerView: View {
                 .font(.title3)
                 .foregroundStyle(.white.opacity(0.78))
                 .multilineTextAlignment(textAlignment)
-
-            Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
-                Text("Data provided by Discogs")
-                    .font(.footnote.weight(.medium))
-                    .underline()
-            }
-            .tint(.white.opacity(0.82))
-            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: textAlignment == .leading ? .leading : .center)
+        .contentShape(Rectangle())
     }
 
     private var pickAnotherButton: some View {
@@ -329,6 +340,67 @@ private struct PickerView: View {
         .controlSize(.large)
         .disabled(!viewModel.canPickAnother)
         .opacity(viewModel.canPickAnother ? 1 : 0.72)
+    }
+}
+
+private struct RecordSwipeNavigationModifier: ViewModifier {
+    @ObservedObject var viewModel: AppViewModel
+    @State private var dragOffset: CGFloat = 0
+
+    private let swipeThreshold: CGFloat = 60
+    private let dragLimit: CGFloat = 90
+    private let bounceDistance: CGFloat = 24
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: dragOffset)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 18)
+                    .onChanged { value in
+                        dragOffset = min(max(value.translation.width, -dragLimit), dragLimit)
+                    }
+                    .onEnded { value in
+                        finishSwipe(translation: value.translation.width)
+                    }
+            )
+    }
+
+    private func finishSwipe(translation: CGFloat) {
+        if translation <= -swipeThreshold {
+            completeSwipe(direction: -1, didNavigate: viewModel.navigateForward())
+        } else if translation >= swipeThreshold {
+            completeSwipe(direction: 1, didNavigate: viewModel.navigateBack())
+        } else {
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.78)) {
+                dragOffset = 0
+            }
+        }
+    }
+
+    private func completeSwipe(direction: CGFloat, didNavigate: Bool) {
+        if didNavigate {
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
+                dragOffset = 0
+            }
+            return
+        }
+
+        withAnimation(.spring(response: 0.16, dampingFraction: 0.55)) {
+            dragOffset = direction * bounceDistance
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
+                dragOffset = 0
+            }
+        }
+    }
+}
+
+private extension View {
+    func recordSwipeNavigation(viewModel: AppViewModel) -> some View {
+        modifier(RecordSwipeNavigationModifier(viewModel: viewModel))
     }
 }
 
