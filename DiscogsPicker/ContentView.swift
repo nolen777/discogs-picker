@@ -437,12 +437,12 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
             return
         }
 
-        guard target != nil else {
+        guard let target else {
             bounce(direction: direction)
             return
         }
 
-        completeSwipe(direction: direction)
+        completeSwipe(direction: direction, target: target)
     }
 
     private func ensureSwipeSnapshot() {
@@ -466,7 +466,7 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
         }
     }
 
-    private func completeSwipe(direction: RecordSwipeDirection) {
+    private func completeSwipe(direction: RecordSwipeDirection, target: CollectionRelease) {
         isCompletingSwipe = true
 
         withAnimation(.easeOut(duration: completionDuration)) {
@@ -484,6 +484,9 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
+                centerRelease = target
+                previousRelease = nil
+                nextRelease = nil
                 dragOffset = 0
                 isCompletingSwipe = false
             }
