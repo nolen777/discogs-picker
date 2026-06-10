@@ -20,6 +20,8 @@ final class AppViewModel: ObservableObject {
     private var preparedRelease: CollectionRelease?
     private var prepareNextTask: Task<Void, Never>?
     private var recentlyPickedInstanceIds: [Int] = []
+    private var backStack: [CollectionRelease] = []
+    private var forwardStack: [CollectionRelease] = []
 
     init() {
         self.credentials = keychain.loadCredentials() ?? DiscogsCredentials(username: "", token: "")
@@ -42,6 +44,10 @@ final class AppViewModel: ObservableObject {
 
     var canPickAnother: Bool {
         releases.count > 1 && preparedRelease != nil && !isPreparingNextRelease
+    }
+
+    var canGoBack: Bool {
+        !backStack.isEmpty
     }
 
     func saveCredentials() {
@@ -102,12 +108,14 @@ final class AppViewModel: ObservableObject {
             credentials = cleanCredentials
             releases = fetchedReleases
             pruneRecentPicks()
+            refreshNavigationHistory(in: fetchedReleases)
             lastSyncedAt = cached.fetchedAt
             isDisplayingExpiredCache = false
             errorMessage = nil
 
             if pickNewRelease || releaseToPreserve == nil {
                 preparedRelease = nil
+                clearForwardHistory()
                 prepareNextTask?.cancel()
                 prepareNextTask = nil
                 isPreparingNextRelease = false
@@ -130,36 +138,73 @@ final class AppViewModel: ObservableObject {
     }
 
     func chooseRandom() {
+        clearForwardHistory()
+        chooseNextRelease()
+    }
+
+    @discardableResult
+    func navigateForward() -> Bool {
+        if let release = forwardStack.popLast() {
+            display(release, preservingCurrentInBackStack: true)
+            reconcilePreparedRelease()
+            return true
+        }
+
+        return chooseNextRelease()
+    }
+
+    @discardableResult
+    func navigateBack() -> Bool {
+        guard let currentRelease, let previousRelease = backStack.popLast() else {
+            return false
+        }
+
+        forwardStack.append(currentRelease)
+        trimNavigationStacks()
+        self.currentRelease = previousRelease
+        rememberPicked(previousRelease)
+        reconcilePreparedRelease()
+        return true
+    }
+
+    @discardableResult
+    private func chooseNextRelease() -> Bool {
         guard !releases.isEmpty else {
             currentRelease = nil
             preparedRelease = nil
             prepareNextTask?.cancel()
             prepareNextTask = nil
             isPreparingNextRelease = false
-            return
+            backStack = []
+            forwardStack = []
+            return false
         }
 
         if releases.count == 1 {
-            currentRelease = releases[0]
-            rememberPicked(releases[0])
+            backStack = []
+            forwardStack = []
+            display(releases[0], preservingCurrentInBackStack: false)
             preparedRelease = nil
             prepareNextTask?.cancel()
             prepareNextTask = nil
             isPreparingNextRelease = false
-            return
+            return true
         }
 
         if let preparedRelease {
-            currentRelease = preparedRelease
-            rememberPicked(preparedRelease)
+            display(preparedRelease, preservingCurrentInBackStack: true)
             self.preparedRelease = nil
             prepareNextRelease()
-            return
+            return true
         }
 
-        currentRelease = randomRelease(excluding: currentRelease)
-        rememberPicked(currentRelease)
+        guard let release = randomRelease(excluding: currentRelease) else {
+            return false
+        }
+
+        display(release, preservingCurrentInBackStack: true)
         prepareNextRelease()
+        return true
     }
 
     private func applyRefreshedSelection(
@@ -222,6 +267,31 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    private func display(_ release: CollectionRelease, preservingCurrentInBackStack shouldPreserveCurrent: Bool) {
+        if shouldPreserveCurrent, let currentRelease, currentRelease != release {
+            backStack.append(currentRelease)
+            trimNavigationStacks()
+        }
+
+        currentRelease = release
+        rememberPicked(release)
+    }
+
+    private func reconcilePreparedRelease() {
+        guard releases.count > 1 else { return }
+
+        if preparedRelease?.instanceId == currentRelease?.instanceId {
+            preparedRelease = nil
+            prepareNextTask?.cancel()
+            prepareNextTask = nil
+            isPreparingNextRelease = false
+        }
+
+        if preparedRelease == nil && !isPreparingNextRelease {
+            prepareNextRelease()
+        }
+    }
+
     private func randomRelease(excluding excludedRelease: CollectionRelease?) -> CollectionRelease? {
         let eligibleReleases = releases.filter { candidate in
             candidate.instanceId != excludedRelease?.instanceId
@@ -259,6 +329,31 @@ final class AppViewModel: ObservableObject {
         let limit = min(recentPickLimit, max(releases.count - 1, 0))
         if recentlyPickedInstanceIds.count > limit {
             recentlyPickedInstanceIds.removeFirst(recentlyPickedInstanceIds.count - limit)
+        }
+    }
+
+    private func refreshNavigationHistory(in refreshedReleases: [CollectionRelease]) {
+        backStack = backStack.compactMap { release in
+            refreshedVersion(of: release, in: refreshedReleases)
+        }
+        forwardStack = forwardStack.compactMap { release in
+            refreshedVersion(of: release, in: refreshedReleases)
+        }
+        trimNavigationStacks()
+    }
+
+    private func clearForwardHistory() {
+        forwardStack = []
+    }
+
+    private func trimNavigationStacks() {
+        let limit = min(recentPickLimit, max(releases.count - 1, 0))
+
+        if backStack.count > limit {
+            backStack.removeFirst(backStack.count - limit)
+        }
+        if forwardStack.count > limit {
+            forwardStack.removeFirst(forwardStack.count - limit)
         }
     }
 
@@ -305,6 +400,8 @@ final class AppViewModel: ObservableObject {
         isPreparingNextRelease = false
         isDisplayingExpiredCache = false
         recentlyPickedInstanceIds = []
+        backStack = []
+        forwardStack = []
     }
 
     private func trimmedCredentials() -> DiscogsCredentials {
