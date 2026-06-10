@@ -223,7 +223,8 @@ private struct PickerView: View {
     }
 
     private func landscapeLayout(size: CGSize) -> some View {
-        let artworkSize = min(size.height - 32, size.width * 0.48)
+        let artworkSize = size.height
+        let controlsWidth = min(max(size.width - artworkSize - 48, 160), 430)
 
         return HStack(alignment: .center, spacing: 24) {
             if let release = viewModel.currentRelease {
@@ -233,19 +234,23 @@ private struct PickerView: View {
                 )
                     .frame(width: artworkSize, height: artworkSize)
 
-                VStack(alignment: .leading, spacing: 24) {
-                    metadata(for: release, textAlignment: .leading)
+                VStack(alignment: .center, spacing: 24) {
+                    Spacer(minLength: 0)
+
+                    metadata(for: release, textAlignment: .center)
+                        .frame(maxWidth: controlsWidth)
 
                     Spacer(minLength: 0)
 
                     pickAnotherButton
-                        .frame(maxWidth: 360)
+                        .frame(maxWidth: controlsWidth)
+
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity, maxHeight: artworkSize, alignment: .leading)
-                .padding(.trailing, 24)
+                .frame(maxWidth: .infinity, maxHeight: artworkSize, alignment: .center)
+                .padding(.trailing, 32)
             }
         }
-        .padding(.leading, 16)
         .frame(width: size.width, height: size.height)
         .background(Color.black)
     }
