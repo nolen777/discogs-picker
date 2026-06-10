@@ -89,6 +89,7 @@ final class AppViewModel: ObservableObject {
             try keychain.save(credentials: cleanCredentials)
             let fetchedReleases = try await api.fetchCollection(credentials: cleanCredentials)
             let releaseToPreserve = currentRelease
+            let preparedReleaseToPreserve = preparedRelease
             let cached = CachedCollection(
                 username: cleanCredentials.username,
                 fetchedAt: Date(),
@@ -102,18 +103,18 @@ final class AppViewModel: ObservableObject {
             isDisplayingExpiredCache = false
             errorMessage = nil
 
-            preparedRelease = nil
-            prepareNextTask?.cancel()
-            prepareNextTask = nil
-            isPreparingNextRelease = false
-
             if pickNewRelease || releaseToPreserve == nil {
+                preparedRelease = nil
+                prepareNextTask?.cancel()
+                prepareNextTask = nil
+                isPreparingNextRelease = false
                 chooseRandom()
-            } else if let releaseToPreserve, let refreshedRelease = refreshedVersion(of: releaseToPreserve) {
-                currentRelease = refreshedRelease
-                prepareNextRelease()
             } else {
-                chooseRandom()
+                applyRefreshedSelection(
+                    current: releaseToPreserve,
+                    prepared: preparedReleaseToPreserve,
+                    refreshedReleases: fetchedReleases
+                )
             }
         } catch {
             if isDisplayingExpiredCache {
@@ -155,6 +156,47 @@ final class AppViewModel: ObservableObject {
         prepareNextRelease()
     }
 
+    private func applyRefreshedSelection(
+        current: CollectionRelease?,
+        prepared: CollectionRelease?,
+        refreshedReleases: [CollectionRelease]
+    ) {
+        let refreshedCurrent = current.flatMap { refreshedVersion(of: $0, in: refreshedReleases) }
+        let refreshedPrepared = prepared.flatMap { refreshedVersion(of: $0, in: refreshedReleases) }
+
+        if let refreshedCurrent {
+            currentRelease = refreshedCurrent
+
+            if let refreshedPrepared, refreshedPrepared != refreshedCurrent {
+                preparedRelease = refreshedPrepared
+                isPreparingNextRelease = false
+            } else {
+                preparedRelease = nil
+                prepareNextTask?.cancel()
+                prepareNextTask = nil
+                isPreparingNextRelease = false
+                prepareNextRelease()
+            }
+            return
+        }
+
+        if let refreshedPrepared {
+            currentRelease = refreshedPrepared
+            preparedRelease = nil
+            prepareNextTask?.cancel()
+            prepareNextTask = nil
+            isPreparingNextRelease = false
+            prepareNextRelease()
+            return
+        }
+
+        preparedRelease = nil
+        prepareNextTask?.cancel()
+        prepareNextTask = nil
+        isPreparingNextRelease = false
+        chooseRandom()
+    }
+
     private func prepareNextRelease() {
         guard releases.count > 1 else { return }
 
@@ -181,8 +223,11 @@ final class AppViewModel: ObservableObject {
         return next
     }
 
-    private func refreshedVersion(of release: CollectionRelease) -> CollectionRelease? {
-        releases.first { candidate in
+    private func refreshedVersion(
+        of release: CollectionRelease,
+        in refreshedReleases: [CollectionRelease]
+    ) -> CollectionRelease? {
+        refreshedReleases.first { candidate in
             candidate.instanceId == release.instanceId
         }
     }
