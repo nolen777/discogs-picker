@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @StateObject private var viewModel = AppViewModel()
 
     var body: some View {
@@ -16,8 +17,9 @@ struct ContentView: View {
                     PickerView(viewModel: viewModel)
                 }
             }
-            .navigationTitle("Crate Shuffle")
+            .navigationTitle(showsNavigationChrome ? "Crate Shuffle" : "")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar(showsNavigationChrome ? .visible : .hidden, for: .navigationBar)
             .toolbarBackground(.black, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .tint(.white)
@@ -51,6 +53,10 @@ struct ContentView: View {
                 Text(viewModel.errorMessage ?? "")
             }
         }
+    }
+
+    private var showsNavigationChrome: Bool {
+        viewModel.needsSetup || verticalSizeClass != .compact
     }
 
     private var errorBinding: Binding<Bool> {
@@ -235,6 +241,19 @@ private struct PickerView: View {
                     .frame(width: artworkSize, height: artworkSize)
 
                 VStack(alignment: .center, spacing: 24) {
+                    ZStack {
+                        Text("Crate Shuffle")
+                            .font(.headline.bold())
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+
+                        HStack {
+                            Spacer()
+                            pickerMenu
+                        }
+                    }
+                    .frame(maxWidth: controlsWidth)
+
                     Spacer(minLength: 0)
 
                     metadata(for: release, textAlignment: .center)
@@ -253,6 +272,23 @@ private struct PickerView: View {
         }
         .frame(width: size.width, height: size.height)
         .background(Color.black)
+        .ignoresSafeArea(.container, edges: .vertical)
+    }
+
+    private var pickerMenu: some View {
+        Menu {
+            Button("Refresh Collection") {
+                Task { await viewModel.syncCollection() }
+            }
+            Button("Reset Credentials", role: .destructive) {
+                viewModel.signOut()
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title2)
+                .foregroundStyle(.white)
+        }
+        .disabled(viewModel.isSyncing)
     }
 
     private func metadata(for release: CollectionRelease, textAlignment: TextAlignment) -> some View {
