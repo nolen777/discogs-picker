@@ -50,6 +50,14 @@ final class AppViewModel: ObservableObject {
         !backStack.isEmpty
     }
 
+    var nextReleaseForNavigation: CollectionRelease? {
+        forwardStack.last ?? preparedRelease
+    }
+
+    var previousReleaseForNavigation: CollectionRelease? {
+        backStack.last
+    }
+
     func saveCredentials() {
         do {
             try keychain.save(credentials: trimmedCredentials())
