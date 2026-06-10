@@ -377,6 +377,7 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     @State private var targetRelease: CollectionRelease?
     @State private var swipeDirection: RecordSwipeDirection?
     @State private var isCompletingSwipe = false
+    @State private var lockedRelease: CollectionRelease?
 
     private let swipeThreshold: CGFloat = 60
     private let unavailableDragLimit: CGFloat = 64
@@ -384,13 +385,15 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     private let completionDuration = 0.22
 
     var body: some View {
+        let visibleRelease = lockedRelease ?? release
+
         ZStack {
             if let targetRelease, let swipeDirection {
                 content(targetRelease)
                     .offset(x: dragOffset + swipeDirection.targetStartOffsetSign * slideDistance)
             }
 
-            content(release)
+            content(visibleRelease)
                 .offset(x: dragOffset)
         }
             .clipped()
@@ -409,8 +412,8 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     private func updateSwipe(translation: CGFloat) {
         guard !isCompletingSwipe else { return }
 
-        let direction = direction(for: translation)
-        let target = targetRelease(for: direction)
+        let direction = swipeDirection ?? direction(for: translation)
+        let target = targetRelease ?? targetRelease(for: direction)
 
         swipeDirection = direction
         targetRelease = target
@@ -423,7 +426,7 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     }
 
     private func finishSwipe(translation: CGFloat) {
-        let direction = direction(for: translation)
+        let direction = swipeDirection ?? direction(for: translation)
         let target = targetRelease ?? targetRelease(for: direction)
 
         guard abs(translation) >= swipeThreshold else {
@@ -434,12 +437,12 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
             return
         }
 
-        guard target != nil else {
+        guard let target else {
             bounce(direction: direction)
             return
         }
 
-        completeSwipe(direction: direction)
+        completeSwipe(direction: direction, target: target)
     }
 
     private func direction(for translation: CGFloat) -> RecordSwipeDirection {
@@ -455,8 +458,9 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
         }
     }
 
-    private func completeSwipe(direction: RecordSwipeDirection) {
+    private func completeSwipe(direction: RecordSwipeDirection, target: CollectionRelease) {
         isCompletingSwipe = true
+        lockedRelease = target
 
         withAnimation(.easeOut(duration: completionDuration)) {
             dragOffset = direction.completionOffsetSign * slideDistance
@@ -474,13 +478,17 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
             transaction.disablesAnimations = true
             withTransaction(transaction) {
                 dragOffset = 0
-                targetRelease = nil
                 swipeDirection = nil
                 isCompletingSwipe = false
             }
 
             if !didNavigate {
+                lockedRelease = nil
+                targetRelease = nil
                 bounce(direction: direction)
+            } else {
+                targetRelease = nil
+                clearLockedRelease(after: 0.05, remainingAttempts: 4)
             }
         }
     }
@@ -506,6 +514,16 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
             targetRelease = nil
             swipeDirection = nil
             isCompletingSwipe = false
+        }
+    }
+
+    private func clearLockedRelease(after delay: TimeInterval, remainingAttempts: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            if release.instanceId == lockedRelease?.instanceId || remainingAttempts <= 0 {
+                lockedRelease = nil
+            } else {
+                clearLockedRelease(after: delay, remainingAttempts: remainingAttempts - 1)
+            }
         }
     }
 }
