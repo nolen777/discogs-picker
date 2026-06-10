@@ -208,14 +208,16 @@ private struct PickerView: View {
     private func portraitLayout(size: CGSize) -> some View {
         VStack(spacing: 18) {
             if let release = viewModel.currentRelease {
-                ArtworkView(
-                    thumbnailURL: release.basicInformation.thumbnailArtworkURL,
-                    fullSizeURL: release.basicInformation.fullArtworkURL
-                )
+                SwipeNavigableReleaseView(viewModel: viewModel, release: release, slideDistance: size.width) { displayedRelease in
+                    ArtworkView(
+                        thumbnailURL: displayedRelease.basicInformation.thumbnailArtworkURL,
+                        fullSizeURL: displayedRelease.basicInformation.fullArtworkURL
+                    )
+                    .frame(width: size.width, height: size.width)
+                }
                 .frame(width: size.width, height: size.width)
-                .recordSwipeNavigation(viewModel: viewModel)
 
-                metadata(for: release, textAlignment: .center)
+                metadata(for: release, textAlignment: .center, swipeDistance: max(size.width - 40, 1))
                     .padding(.horizontal, 20)
             }
 
@@ -235,12 +237,14 @@ private struct PickerView: View {
 
         return HStack(alignment: .center, spacing: 24) {
             if let release = viewModel.currentRelease {
-                ArtworkView(
-                    thumbnailURL: release.basicInformation.thumbnailArtworkURL,
-                    fullSizeURL: release.basicInformation.fullArtworkURL
-                )
+                SwipeNavigableReleaseView(viewModel: viewModel, release: release, slideDistance: artworkSize) { displayedRelease in
+                    ArtworkView(
+                        thumbnailURL: displayedRelease.basicInformation.thumbnailArtworkURL,
+                        fullSizeURL: displayedRelease.basicInformation.fullArtworkURL
+                    )
+                    .frame(width: artworkSize, height: artworkSize)
+                }
                 .frame(width: artworkSize, height: artworkSize)
-                .recordSwipeNavigation(viewModel: viewModel)
 
                 VStack(alignment: .center, spacing: 24) {
                     ZStack {
@@ -258,7 +262,7 @@ private struct PickerView: View {
 
                     Spacer(minLength: 0)
 
-                    metadata(for: release, textAlignment: .center)
+                    metadata(for: release, textAlignment: .center, swipeDistance: controlsWidth)
                         .frame(maxWidth: controlsWidth)
 
                     Spacer(minLength: 0)
@@ -293,10 +297,11 @@ private struct PickerView: View {
         .disabled(viewModel.isSyncing)
     }
 
-    private func metadata(for release: CollectionRelease, textAlignment: TextAlignment) -> some View {
+    private func metadata(for release: CollectionRelease, textAlignment: TextAlignment, swipeDistance: CGFloat) -> some View {
         VStack(alignment: textAlignment == .leading ? .leading : .center, spacing: 8) {
-            releaseIdentity(for: release, textAlignment: textAlignment)
-                .recordSwipeNavigation(viewModel: viewModel)
+            SwipeNavigableReleaseView(viewModel: viewModel, release: release, slideDistance: swipeDistance) { displayedRelease in
+                releaseIdentity(for: displayedRelease, textAlignment: textAlignment)
+            }
 
             Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
                 Text("Data provided by Discogs")
@@ -343,22 +348,57 @@ private struct PickerView: View {
     }
 }
 
-private struct RecordSwipeNavigationModifier: ViewModifier {
+private enum RecordSwipeDirection {
+    case backward
+    case forward
+
+    var completionOffsetSign: CGFloat {
+        switch self {
+        case .backward: 1
+        case .forward: -1
+        }
+    }
+
+    var targetStartOffsetSign: CGFloat {
+        switch self {
+        case .backward: -1
+        case .forward: 1
+        }
+    }
+}
+
+private struct SwipeNavigableReleaseView<Content: View>: View {
     @ObservedObject var viewModel: AppViewModel
+    let release: CollectionRelease
+    let slideDistance: CGFloat
+    @ViewBuilder var content: (CollectionRelease) -> Content
+
     @State private var dragOffset: CGFloat = 0
+    @State private var targetRelease: CollectionRelease?
+    @State private var swipeDirection: RecordSwipeDirection?
+    @State private var isCompletingSwipe = false
 
     private let swipeThreshold: CGFloat = 60
-    private let dragLimit: CGFloat = 90
+    private let unavailableDragLimit: CGFloat = 64
     private let bounceDistance: CGFloat = 24
+    private let completionDuration = 0.22
 
-    func body(content: Content) -> some View {
-        content
-            .offset(x: dragOffset)
+    var body: some View {
+        ZStack {
+            if let targetRelease, let swipeDirection {
+                content(targetRelease)
+                    .offset(x: dragOffset + swipeDirection.targetStartOffsetSign * slideDistance)
+            }
+
+            content(release)
+                .offset(x: dragOffset)
+        }
+            .clipped()
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 18)
                     .onChanged { value in
-                        dragOffset = min(max(value.translation.width, -dragLimit), dragLimit)
+                        updateSwipe(translation: value.translation.width)
                     }
                     .onEnded { value in
                         finishSwipe(translation: value.translation.width)
@@ -366,41 +406,107 @@ private struct RecordSwipeNavigationModifier: ViewModifier {
             )
     }
 
-    private func finishSwipe(translation: CGFloat) {
-        if translation <= -swipeThreshold {
-            completeSwipe(direction: -1, didNavigate: viewModel.navigateForward())
-        } else if translation >= swipeThreshold {
-            completeSwipe(direction: 1, didNavigate: viewModel.navigateBack())
+    private func updateSwipe(translation: CGFloat) {
+        guard !isCompletingSwipe else { return }
+
+        let direction = direction(for: translation)
+        let target = targetRelease(for: direction)
+
+        swipeDirection = direction
+        targetRelease = target
+
+        if target == nil {
+            dragOffset = min(max(translation, -unavailableDragLimit), unavailableDragLimit)
         } else {
+            dragOffset = min(max(translation, -slideDistance), slideDistance)
+        }
+    }
+
+    private func finishSwipe(translation: CGFloat) {
+        let direction = direction(for: translation)
+        let target = targetRelease ?? targetRelease(for: direction)
+
+        guard abs(translation) >= swipeThreshold else {
             withAnimation(.spring(response: 0.24, dampingFraction: 0.78)) {
                 dragOffset = 0
+            }
+            resetTarget(after: 0.18)
+            return
+        }
+
+        guard target != nil else {
+            bounce(direction: direction)
+            return
+        }
+
+        completeSwipe(direction: direction)
+    }
+
+    private func direction(for translation: CGFloat) -> RecordSwipeDirection {
+        translation >= 0 ? .backward : .forward
+    }
+
+    private func targetRelease(for direction: RecordSwipeDirection) -> CollectionRelease? {
+        switch direction {
+        case .backward:
+            viewModel.previousReleaseForNavigation
+        case .forward:
+            viewModel.nextReleaseForNavigation
+        }
+    }
+
+    private func completeSwipe(direction: RecordSwipeDirection) {
+        isCompletingSwipe = true
+
+        withAnimation(.easeOut(duration: completionDuration)) {
+            dragOffset = direction.completionOffsetSign * slideDistance
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + completionDuration) {
+            let didNavigate = switch direction {
+            case .backward:
+                viewModel.navigateBack()
+            case .forward:
+                viewModel.navigateForward()
+            }
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                dragOffset = 0
+                targetRelease = nil
+                swipeDirection = nil
+                isCompletingSwipe = false
+            }
+
+            if !didNavigate {
+                bounce(direction: direction)
             }
         }
     }
 
-    private func completeSwipe(direction: CGFloat, didNavigate: Bool) {
-        if didNavigate {
-            withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
-                dragOffset = 0
-            }
-            return
-        }
+    private func bounce(direction: RecordSwipeDirection) {
+        targetRelease = nil
+        swipeDirection = direction
 
         withAnimation(.spring(response: 0.16, dampingFraction: 0.55)) {
-            dragOffset = direction * bounceDistance
+            dragOffset = direction.completionOffsetSign * bounceDistance
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
                 dragOffset = 0
             }
+            resetTarget(after: 0.2)
         }
     }
-}
 
-private extension View {
-    func recordSwipeNavigation(viewModel: AppViewModel) -> some View {
-        modifier(RecordSwipeNavigationModifier(viewModel: viewModel))
+    private func resetTarget(after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            targetRelease = nil
+            swipeDirection = nil
+            isCompletingSwipe = false
+        }
     }
 }
 
