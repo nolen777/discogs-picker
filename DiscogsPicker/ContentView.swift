@@ -400,12 +400,14 @@ private struct SwipeNavigableReleaseView<Content: View>: View {
     private let completionDuration = 0.22
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             if panels.isEmpty {
                 content(release)
+                    .frame(width: slideDistance, alignment: .top)
             } else {
                 ForEach(panels) { panel in
                     content(panel.release)
+                        .frame(width: slideDistance, alignment: .top)
                         .offset(x: CGFloat(panel.position) * slideDistance + dragOffset)
                 }
             }
