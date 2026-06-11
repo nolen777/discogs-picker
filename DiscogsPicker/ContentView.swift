@@ -209,16 +209,18 @@ private struct PickerView: View {
         VStack(spacing: 18) {
             if let release = viewModel.currentRelease {
                 SwipeNavigableReleaseView(viewModel: viewModel, release: release, slideDistance: size.width) { displayedRelease in
-                    ArtworkView(
-                        thumbnailURL: displayedRelease.basicInformation.thumbnailArtworkURL,
-                        fullSizeURL: displayedRelease.basicInformation.fullArtworkURL
-                    )
-                    .frame(width: size.width, height: size.width)
-                }
-                .frame(width: size.width, height: size.width)
+                    VStack(spacing: 18) {
+                        ArtworkView(
+                            thumbnailURL: displayedRelease.basicInformation.thumbnailArtworkURL,
+                            fullSizeURL: displayedRelease.basicInformation.fullArtworkURL
+                        )
+                        .frame(width: size.width, height: size.width)
 
-                metadata(for: release, textAlignment: .center, swipeDistance: max(size.width - 40, 1))
-                    .padding(.horizontal, 20)
+                        metadata(for: displayedRelease, textAlignment: .center)
+                            .padding(.horizontal, 20)
+                    }
+                }
+                .frame(width: size.width)
             }
 
             Spacer(minLength: 0)
@@ -235,50 +237,67 @@ private struct PickerView: View {
         let artworkSize = size.height
         let controlsWidth = min(max(size.width - artworkSize - 48, 160), 430)
 
-        return HStack(alignment: .center, spacing: 24) {
+        return ZStack {
             if let release = viewModel.currentRelease {
-                SwipeNavigableReleaseView(viewModel: viewModel, release: release, slideDistance: artworkSize) { displayedRelease in
-                    ArtworkView(
-                        thumbnailURL: displayedRelease.basicInformation.thumbnailArtworkURL,
-                        fullSizeURL: displayedRelease.basicInformation.fullArtworkURL
+                SwipeNavigableReleaseView(viewModel: viewModel, release: release, slideDistance: size.width) { displayedRelease in
+                    landscapeRecordPanel(
+                        for: displayedRelease,
+                        size: size,
+                        artworkSize: artworkSize,
+                        controlsWidth: controlsWidth
                     )
-                    .frame(width: artworkSize, height: artworkSize)
                 }
-                .frame(width: artworkSize, height: artworkSize)
-
-                VStack(alignment: .center, spacing: 24) {
-                    ZStack {
-                        Text("Crate Shuffle")
-                            .font(.headline.bold())
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.center)
-
-                        HStack {
-                            Spacer()
-                            pickerMenu
-                        }
-                    }
-                    .frame(maxWidth: controlsWidth)
-
-                    Spacer(minLength: 0)
-
-                    metadata(for: release, textAlignment: .center, swipeDistance: controlsWidth)
-                        .frame(maxWidth: controlsWidth)
-
-                    Spacer(minLength: 0)
-
-                    pickAnotherButton
-                        .frame(maxWidth: controlsWidth)
-
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, maxHeight: artworkSize, alignment: .center)
-                .padding(.trailing, 32)
+                .frame(width: size.width, height: size.height)
             }
         }
         .frame(width: size.width, height: size.height)
         .background(Color.black)
         .ignoresSafeArea(.container, edges: .vertical)
+    }
+
+    private func landscapeRecordPanel(
+        for release: CollectionRelease,
+        size: CGSize,
+        artworkSize: CGFloat,
+        controlsWidth: CGFloat
+    ) -> some View {
+        HStack(alignment: .center, spacing: 24) {
+            ArtworkView(
+                thumbnailURL: release.basicInformation.thumbnailArtworkURL,
+                fullSizeURL: release.basicInformation.fullArtworkURL
+            )
+            .frame(width: artworkSize, height: artworkSize)
+
+            VStack(alignment: .center, spacing: 24) {
+                ZStack {
+                    Text("Crate Shuffle")
+                        .font(.headline.bold())
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+
+                    HStack {
+                        Spacer()
+                        pickerMenu
+                    }
+                }
+                .frame(maxWidth: controlsWidth)
+
+                Spacer(minLength: 0)
+
+                metadata(for: release, textAlignment: .center)
+                    .frame(maxWidth: controlsWidth)
+
+                Spacer(minLength: 0)
+
+                pickAnotherButton
+                    .frame(maxWidth: controlsWidth)
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: artworkSize, alignment: .center)
+            .padding(.trailing, 32)
+        }
+        .frame(width: size.width, height: size.height)
     }
 
     private var pickerMenu: some View {
@@ -297,11 +316,9 @@ private struct PickerView: View {
         .disabled(viewModel.isSyncing)
     }
 
-    private func metadata(for release: CollectionRelease, textAlignment: TextAlignment, swipeDistance: CGFloat) -> some View {
+    private func metadata(for release: CollectionRelease, textAlignment: TextAlignment) -> some View {
         VStack(alignment: textAlignment == .leading ? .leading : .center, spacing: 8) {
-            SwipeNavigableReleaseView(viewModel: viewModel, release: release, slideDistance: swipeDistance) { displayedRelease in
-                releaseIdentity(for: displayedRelease, textAlignment: textAlignment)
-            }
+            releaseIdentity(for: release, textAlignment: textAlignment)
 
             Link(destination: release.discogsURL ?? URL(string: "https://www.discogs.com")!) {
                 Text("Data provided by Discogs")
